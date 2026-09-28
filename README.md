@@ -274,4 +274,9 @@ Set in `.env`:
 - If the bot lacks Manage Messages permission, it still posts the fixed
   link — it just won't be able to hide the original broken embed.
 - To run this continuously, host it on a small VPS or a process manager
-  like `pm2` (`pm2 start index.js --name x-embed-bot`).
+  like `pm2` (`pm2 start index.js --name cardify`).
+
+## License
+
+[MIT](LICENSE) - free to use, change, and share, as long as the copyright
+notice stays with it.
