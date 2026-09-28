@@ -1,0 +1,19 @@
+{
+  "name": "discord-cardify",
+  "version": "2.0.0",
+  "description": "Discord Cardify - a Discord bot that turns X/Twitter, TikTok, Instagram, Twitch, and YouTube links into clean cards with playable video, and paywalled news links into readable ones.",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js",
+    "status": "node scripts/bot-control.js status",
+    "stop": "node scripts/bot-control.js stop",
+    "test": "node test/harness.js && node test/restart-test.js",
+    "test:live": "node test/live.js",
+    "clean:test": "node scripts/clean-test-channel.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5"
+  }
+}

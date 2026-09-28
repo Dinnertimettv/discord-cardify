@@ -1,0 +1,275 @@
+===========================================================================
+  HOW TO SET UP AND RUN DISCORD CARDIFY
+===========================================================================
+
+This guide walks you through everything, one small step at a time.
+You don't need to know how to code.
+
+  - Parts 1 to 4 are only done ONCE.
+  - After that, you only ever need Part 5 to turn the bot on.
+
+Good to know: the bot runs on your computer. It is only online while
+your computer is on AND the bot window is open.
+
+Whenever this guide says "type", type the text exactly as shown and then
+press the Enter key.
+
+
+===========================================================================
+  PART 1 - INSTALL NODE.JS  (one time only)
+===========================================================================
+
+Node.js is a free program the bot needs to run.
+
+  1. Open your web browser and go to:  https://nodejs.org
+
+  2. Click the big button that says "LTS" to download it.
+
+  3. Open the file you downloaded and keep clicking "Next" until it
+     finishes. The normal options are fine.
+
+  4. Restart your computer.
+
+  5. Check that it worked:
+       - Click the Start menu and type:  PowerShell
+       - Open "Windows PowerShell" (a blue or black window).
+       - Type:
+
+             node -v
+
+       - You should see a number like  v24.19.0
+         (Any number that starts with v18 or higher is fine.)
+
+
+===========================================================================
+  PART 2 - CREATE THE BOT ON DISCORD  (one time only)
+===========================================================================
+
+  1. Go to:  https://discord.com/developers/applications
+     and log in with your Discord account.
+
+  2. Click "New Application" (top right).
+     Give it a name, for example:  Cardify
+     (Discord doesn't allow the word "discord" in a bot's name.)
+     Tick the box to agree, then click "Create".
+
+  3. On the left side, click "Bot".
+
+  4. Scroll down to "Privileged Gateway Intents".
+     Turn ON the switch called "Message Content Intent".
+     Click "Save Changes" at the bottom.
+     (Without this, the bot can't read the links people post.)
+
+  5. Scroll back up and click "Reset Token", then "Yes, do it!".
+     Click "Copy" to copy the token.
+
+     Paste it into Notepad for now so you don't lose it.
+
+     !! The token is the bot's PASSWORD. Never share it, never post it in
+     !! Discord, and never send it to anyone. If it ever gets out, come
+     !! back here and click "Reset Token" to get a new one.
+
+  6. Still on the "Bot" page, turn OFF the switch called "Public Bot" and
+     click "Save Changes". This stops strangers from adding your bot to
+     their servers. (Do this after Part 3 if Discord won't let you invite
+     the bot with it off.)
+
+
+===========================================================================
+  PART 3 - ADD THE BOT TO YOUR SERVER  (once for each server)
+===========================================================================
+
+You need to be an admin of the Discord server for this part.
+
+  1. Still on the Discord developer website, click "OAuth2" on the left,
+     then "URL Generator".
+
+  2. In the "Scopes" box, tick these two:
+        [x] bot
+        [x] applications.commands
+
+  3. A "Bot Permissions" box appears below. The easiest choice is to tick:
+        [x] Administrator
+
+     (If you'd rather not give it Administrator, tick all of these
+     instead: View Channels, Send Messages, Read Message History,
+     Manage Messages, Embed Links, Create Public Threads, Send Messages
+     in Threads, Manage Threads, Pin Messages, Manage Webhooks,
+     Use Application Commands.)
+
+  4. At the very bottom of the page there is a link. Click "Copy".
+
+  5. Paste that link into your web browser's address bar and press Enter.
+     Pick your server from the list, click "Continue", then "Authorize".
+
+The bot now shows up in your server's member list (offline for now -
+that's normal until Part 5).
+
+
+===========================================================================
+  PART 4 - SET UP THE BOT'S FOLDER  (one time only)
+===========================================================================
+
+  1. Open the bot's folder (the folder this file is in).
+
+  2. Open PowerShell INSIDE this folder:
+       - Click once on the address bar at the top of the folder window
+         (where the folder's location is shown).
+       - Delete what's there, type:  powershell   and press Enter.
+       - A PowerShell window opens. Use this window for the steps below.
+
+  3. Type this and wait until it finishes (it can take a minute or two):
+
+             npm install
+
+  4. Type this to create your settings file:
+
+             copy .env.example .env
+
+  5. Type this to open the settings file in Notepad:
+
+             notepad .env
+
+  6. In Notepad, find the line that says:
+
+             DISCORD_TOKEN=
+
+     Click right after the = sign and paste your bot token (from
+     Part 2, step 5). No spaces. It should look like:
+
+             DISCORD_TOKEN=MTE0NzU...(a long line of letters and numbers)
+
+     Then click File > Save, and close Notepad.
+
+  7. (RECOMMENDED) Lock the bot to your servers, so it leaves any other
+     server someone adds it to:
+       - In Discord, open Settings > Advanced and turn on Developer Mode.
+       - Right-click your server's icon (on the far left) and click
+         "Copy Server ID".
+       - Open the settings file (type:  notepad .env ), find the line
+         ALLOWED_GUILD_IDS=  and paste the ID right after the = sign.
+         For more than one server, put a comma between the IDs, like:
+             ALLOWED_GUILD_IDS=111111111111111111,222222222222222222
+       - Save and close Notepad.
+
+  8. (OPTIONAL - you can skip this)
+     The bot can also save every shared link into topic threads
+     ("X Posts", "TikTok Videos", and so on) in a channel you choose:
+       - Right-click the channel you want to use and click
+         "Copy Channel ID". (Needs Developer Mode, from step 7.)
+       - Open the settings file again (type:  notepad .env ), find the line
+         LINK_ARCHIVE_CHANNEL_IDS=  and paste the ID right after the = sign.
+       - Save and close Notepad.
+
+
+===========================================================================
+  PART 5 - TURN THE BOT ON  (every time you want it running)
+===========================================================================
+
+  1. Open PowerShell inside the bot's folder (same as Part 4, step 2).
+
+  2. Type:
+
+             npm start
+
+  3. Wait until you see a line like:
+
+             Logged in as Cardify#1234 - version 2.0.0
+
+     (with your bot's name and number)
+
+     That means it's working! The bot now shows as online in Discord.
+
+  4. Try it: post an X, TikTok, Instagram, Twitch, or YouTube link in your
+     server. The bot should replace it with a nice card.
+
+  !! LEAVE THE POWERSHELL WINDOW OPEN. Closing it turns the bot off.
+  !! You can minimize it.
+
+
+===========================================================================
+  TURNING IT OFF, CHECKING ON IT
+===========================================================================
+
+  To turn the bot OFF:
+      Click on its PowerShell window and press  Ctrl + C
+      (or close the window).
+
+  To check if the bot is running:
+      Open PowerShell in the bot's folder and type:   npm run status
+
+  To turn it off from any PowerShell window in the bot's folder:
+      Type:   npm run stop
+
+  To restart it:
+      Turn it off, then turn it on again (Part 5).
+
+  Only ONE copy of the bot can run at a time. If you try to start a
+  second one, it will say so and not start.
+
+  Everything the bot does is written to a log file. If something seems
+  wrong, open the "logs" folder and then "bot.log" and look at the
+  bottom of it.
+
+
+===========================================================================
+  SETTINGS YOU CAN CHANGE IN DISCORD
+===========================================================================
+
+Server admins can type  /embeds  in any channel:
+
+  /embeds channel     turn the bot off (or back on) in the current channel
+  /embeds language    choose the language posts get translated into
+  /embeds post-as     post links under the person's name, or as the bot
+  /embeds status      see the current settings
+
+
+===========================================================================
+  IF SOMETHING GOES WRONG
+===========================================================================
+
+  Problem:  It says  DISCORD_TOKEN is missing
+  Fix:      The token isn't in the settings file yet. Do Part 4,
+            steps 5 and 6 again.
+
+  Problem:  It says  Failed to log in ... An invalid token was provided
+  Fix:      The token is wrong or was reset. Get a new token (Part 2,
+            step 5) and paste it in again (Part 4, steps 5 and 6).
+
+  Problem:  It says  Failed to log in ... Used disallowed intents
+  Fix:      Turn on "Message Content Intent" (Part 2, step 4).
+
+  Problem:  It says  The bot is already running on this PC
+  Fix:      Type  npm run stop  and then  npm start
+
+  Problem:  It says  'npm' is not recognized
+  Fix:      Node.js isn't installed yet (Part 1). If you just installed
+            it, restart your computer and try again.
+
+  Problem:  The bot is online but doesn't do anything with links
+  Fix:      Make sure the bot has the "Manage Messages" and
+            "Manage Webhooks" permissions (or Administrator), and that
+            /embeds status doesn't say that channel is turned off.
+
+  Problem:  The /embeds command doesn't show up
+  Fix:      Add the bot again with "applications.commands" ticked
+            (Part 3), then wait a minute and restart Discord.
+
+  Problem:  Something else
+  Fix:      Open the "logs" folder, then "bot.log", and look at the last
+            few lines - the error will be there.
+
+
+===========================================================================
+  UPDATING THE BOT TO A NEW VERSION
+===========================================================================
+
+  1. Turn the bot off (Ctrl + C in its window, or  npm run stop ).
+
+  2. Copy the new bot files into the folder, replacing the old ones.
+     !! DO NOT replace or delete your ".env" file or the "data" folder.
+     !! They hold your token and your server settings.
+
+  3. Open PowerShell in the folder and type:   npm install
+
+  4. Turn the bot on again:   npm start
