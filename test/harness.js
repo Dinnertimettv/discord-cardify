@@ -382,7 +382,7 @@ async function click(label, customId, sent, opts, check) {
     if (!text.startsWith('### [𝕏  ·  Post](https://x.com/u/status/9000000000000000001)')) return 'header: ' + text.split('\n')[0];
     const quoteAt = text.indexOf('### [↪ Quoting](');
     if (quoteAt < 0 || text.indexOf('AAAA') > quoteAt || text.indexOf('>>> BBBB') < quoteAt) return 'the shared post should come first, its quote inside the card after it';
-    if (!/\n\*\*A+…\*\*\n/.test(text)) return 'the cut-off post text should stay bold, closing ** intact';
+    if (!/\nA+…\n/.test(text)) return 'the long post text should be cut off with …';
     return null;
   });
   await run('two video posts quoting the same video -> two cards, both videos play in each', 'https://x.com/u/status/9000000000000000003 https://x.com/u/status/9000000000000000005', {}, (out) => {
@@ -569,10 +569,10 @@ async function click(label, customId, sent, opts, check) {
     if (note?.accent_color !== 0xf2b705 || !textOf([note]).includes('Readers added context')) return 'no Community Note box';
     return o.links.join() === 'Open on 𝕏 -> https://x.com/u/status/9000000000000000011' ? null : `links: ${o.links}`;
   });
-  await run('X quote card: same-size linked headings, the post\'s text bold and its quote\'s regular, no numbering, "Open quoted post" button', 'https://x.com/DropSiteNews/status/9000000000000000009', {}, ([o]) => {
+  await run('X quote card: same-size linked headings, plain post text, no numbering, "Open quoted post" button', 'https://x.com/DropSiteNews/status/9000000000000000009', {}, ([o]) => {
     const text = textOf(cardsOf(o));
     if (
-      !text.startsWith('### [𝕏  ·  Post](https://x.com/u/status/9000000000000000009)\n**Mock** @mock\n**hi**\n') ||
+      !text.startsWith('### [𝕏  ·  Post](https://x.com/u/status/9000000000000000009)\n**Mock** @mock\nhi\n') ||
       !text.includes('\n### [↪ Quoting](https://x.com/u/status/9000000000000000010)\n**Mock** @mock\n>>> hi') ||
       text.includes('of 2')
     ) return 'headings: ' + text;

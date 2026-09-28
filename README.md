@@ -32,10 +32,10 @@ knowledge needed.
    it was posted from. X **Community Notes** show in their own amber box
    under the post. An **"Open on 𝕏"** button opens the original post.
 4. A post that **quotes** another stays **one card**, so one card is always
-   one shared link: the shared post on top, its text in **bold**, then a
-   divider and a **"↪ Quoting"** heading (linked to the quoted post) with
-   the quoted post's author and profile picture, its text in regular
-   weight set off with a quote line, and then its photos and videos
+   one shared link: the shared post on top, then a divider and a
+   **"↪ Quoting"** heading (linked to the quoted post) with the quoted
+   post's author and profile picture, its text set off with a quote line,
+   and then its photos and videos
    (videos play right in the card). Only one level deep — a quote of a
    quote isn't unwound further. An **"Open
    quoted post"** button sits next to "Open on 𝕏". If the quoted post has

@@ -29,13 +29,13 @@ cards, a link archive, server settings, and a lot of crash-proofing.
 
 **X cards**
 - A bold "𝕏 · Post" heading (or "Replying to @..."), the author's name and
-  profile picture, **the post's text in bold**, its photos and videos, and a
+  profile picture, the post's text, its photos and videos, and a
   stats bar - replies, reposts, likes, and views in X's short style (10.5K) -
   with "x hours ago" and the app it was posted from.
 - **A post that quotes another is one card**, so one card is always one
   shared link. Under the post, a divider and a "↪ Quoting" heading (linked
   to the quoted post) introduce the quoted post: its author's profile
-  picture, its text in regular weight set off with a quote line, and its
+  picture, its text set off with a quote line, and its
   photos and videos. An **"Open quoted post"** button sits next to
   "Open on 𝕏". If the quoted post was deleted or made private, a short note
   says so.

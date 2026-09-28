@@ -494,7 +494,7 @@ function buildTweetComponents(tweet) {
     [
       linkedHeading(`𝕏  ·  ${kind}`, tweet.url),
       postNameLine(tweet),
-      tweet.text && boldText(tweet.text, limits.text),
+      tweet.text && truncate(tweet.text, limits.text),
     ]
       .filter(Boolean)
       .join('\n'),
@@ -527,9 +527,9 @@ function buildTweetComponents(tweet) {
 }
 
 // The quoted post, inside the quoting post's card, laid out like the post
-// itself: its author's profile picture on the right, its author, its text in
-// regular weight (the shared post's text is bold) set off with Discord's
-// quote line, then its photos and videos (videos play right in the card).
+// itself: its author's profile picture on the right, its author, its text set
+// off with Discord's quote line, then its photos and videos (videos play right
+// in the card).
 function addQuotedPost(card, quote, limits) {
   if (quote.type === 'tombstone') {
     card.addTextDisplayComponents(
@@ -552,20 +552,6 @@ function addQuotedPost(card, quote, limits) {
 // title link did.
 function linkedHeading(text, url) {
   return `### ${url ? `[${text}](${url.replace(/\)/g, '%29')})` : text}`;
-}
-
-// A shared post's text in bold, so it stands out from the post it quotes.
-// Bolded line by line, with any asterisks in the post escaped so they can't
-// end the bold early. Cut to length before bolding, so the closing ** is
-// never cut off.
-function boldText(text, limit) {
-  const bold = (s) =>
-    s
-      .split('\n')
-      .map((line) => (line.trim() ? `**${line.trim().replace(/\*/g, '\\*')}**` : ''))
-      .join('\n');
-  const result = bold(truncate(text, limit));
-  return result.length <= limit ? result : bold(truncate(text, limit - (result.length - limit)));
 }
 
 // "**Name** @handle"
