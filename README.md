@@ -1,5 +1,7 @@
 # Discord Cardify
 
+<a href="https://buymeacoffee.com/dinnertime"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="40"></a>
+
 X's own link previews on Discord are usually broken (no image, no video, blank
 card), TikTok and Instagram links don't preview at all, and paywalled news
 links just hit a subscription wall. **Discord Cardify** watches for X/Twitter,
@@ -280,3 +282,6 @@ Set in `.env`:
 
 [MIT](LICENSE) - free to use, change, and share, as long as the copyright
 notice stays with it.
+
+If Discord Cardify makes your server better, you can
+[buy me a coffee](https://buymeacoffee.com/dinnertime) ☕ - thank you!
