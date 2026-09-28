@@ -18,6 +18,7 @@ const {
   Events,
   GatewayIntentBits,
   InteractionContextType,
+  InviteTargetType,
   MediaGalleryBuilder,
   MediaGalleryItemBuilder,
   MessageFlags,
@@ -194,6 +195,8 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.MessageContent,
+    // Which voice channel someone is in, for the "Watch Together" button.
+    GatewayIntentBits.GuildVoiceStates,
   ],
   partials: [Partials.Message, Partials.Channel],
 });
@@ -1013,7 +1016,8 @@ function buildYouTubeCard(video, { kind, id, time, url }) {
   card.addActionRowComponents(
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('▶️ Watch on YouTube').setURL(url),
-      makeButton(`watch-yt:${id}:${time ?? ''}`, '▶️ Watch on Discord').setStyle(ButtonStyle.Primary)
+      makeButton(`watch-yt:${id}:${time ?? ''}`, '▶️ Watch on Discord').setStyle(ButtonStyle.Primary),
+      makeButton(`watch-together:${id}:${time ?? ''}`, '📺 Watch Together')
     )
   );
   let source = video.seconds && formatDuration(video.seconds);
@@ -1730,6 +1734,7 @@ const BUTTON_HANDLERS = {
   'copy-tw': { run: copyTwitchLink, failMessage: "Couldn't get that link." },
   'copy-yt': { run: copyYouTubeLink, failMessage: "Couldn't get that link." },
   'watch-yt': { run: watchOnDiscord, failMessage: "Couldn't open that video." },
+  'watch-together': { run: watchTogether, failMessage: "Couldn't start Watch Together - try again in a moment." },
   'yt-summary': { run: showVideoSummary, failMessage: "Couldn't get that video's summary." },
   'flag-card': { run: flagCard, failMessage: FLAG_FAILED },
   'unflag-card': { run: unflagCard, failMessage: "Couldn't undo the flag - something went wrong editing the message." },
@@ -1850,6 +1855,47 @@ async function copyYouTubeLink(interaction, kind, id) {
 // video plays right in Discord (a card can't hold that player).
 async function watchOnDiscord(interaction, id, time) {
   await interaction.reply({ content: youtubeUrl('video', id, time || null), flags: MessageFlags.Ephemeral });
+}
+
+// Discord's own "Watch Together" activity - YouTube, full-size and in sync for
+// everyone in a voice channel.
+const WATCH_TOGETHER_APP_ID = '880218394199220334';
+
+// "Watch Together" on a YouTube card: privately gives whoever clicked an
+// invite that opens Watch Together in the voice channel they're in, plus the
+// video's link to paste into it (Discord doesn't let bots pick the video).
+async function watchTogether(interaction, id, time) {
+  if (!interaction.inGuild()) {
+    await replyPrivately(interaction, 'Watch Together only works in a server, in a voice channel.');
+    return;
+  }
+  const voice = interaction.guild?.voiceStates.cache.get(interaction.user.id)?.channel;
+  if (!voice) {
+    await replyPrivately(
+      interaction,
+      'Join a voice channel first, then click **📺 Watch Together** again - it opens YouTube there for everyone in the call.'
+    );
+    return;
+  }
+  if (!voice.permissionsFor(interaction.guild.members.me)?.has(PermissionFlagsBits.CreateInstantInvite)) {
+    await replyPrivately(interaction, `I don't have permission to create invites in <#${voice.id}>, so I can't start Watch Together there.`);
+    return;
+  }
+  const invite = await voice.createInvite({
+    maxAge: 60 * 60,
+    targetType: InviteTargetType.EmbeddedApplication,
+    targetApplication: WATCH_TOGETHER_APP_ID,
+    reason: `Watch Together for a YouTube video, started by ${interaction.user.tag}`,
+  });
+  await replyPrivately(
+    interaction,
+    [
+      `📺 **Watch Together in <#${voice.id}>:** ${invite.url}`,
+      "Once it opens, paste this video's link into it:",
+      // In <> so Discord doesn't add another preview of the video.
+      `<${youtubeUrl('video', id, time || null)}>`,
+    ].join('\n')
+  );
 }
 
 // "Video Summary" on a YouTube card: YouTube's AI summary of the video, privately.

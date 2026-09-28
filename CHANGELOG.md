@@ -71,6 +71,10 @@ cards, a link archive, server settings, and a lot of crash-proofing.
   **▶️ Watch on Discord**, which privately shows whoever clicks Discord's
   own YouTube player so the video plays right in Discord. (YouTube doesn't
   hand out video files, so it can't play inside the card itself.)
+- A **📺 Watch Together** button: from a voice channel, it privately gives
+  you an invite that opens Discord's Watch Together activity there -
+  YouTube full-size, in sync for everyone in the call - with the video's
+  link to paste in once it opens.
 - A **✨ Video Summary** button when YouTube has an AI summary of the video -
   click it to read the summary privately.
 - Age-restricted videos arrive blurred. Links to a specific moment
@@ -183,6 +187,7 @@ all of them):
 - **Manage Webhooks** - to post as the sharer.
 - **Pin Messages** - to pin the link archive's category messages.
 - **Manage Threads** - to close reply threads after 24 hours.
+- **Create Invite** - for YouTube's Watch Together button.
 - The **applications.commands** scope - for `/embeds` (re-invite the bot if
   the command doesn't show up in a server).
 

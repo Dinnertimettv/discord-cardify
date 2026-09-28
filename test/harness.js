@@ -307,8 +307,12 @@ async function run(label, content, opts, check) {
   return sent[0];
 }
 
-function fakeInteraction(customId, sent, { userId = '222222222222222222', isMod = false, inGuild = true } = {}) {
+// voiceChannel: the voice channel whoever clicked is in (for Watch Together).
+function fakeInteraction(customId, sent, { userId = '222222222222222222', isMod = false, inGuild = true, voiceChannel = null } = {}) {
   const log = [];
+  const guild = inGuild
+    ? { members: { me: {} }, voiceStates: { cache: new Map(voiceChannel ? [[userId, { channel: voiceChannel }]] : []) } }
+    : null;
   const thread = { send: async (p) => log.push(['thread.send', validate(p)]) };
   const message = {
     id: sent.id ?? 'clicked-message',
@@ -321,7 +325,7 @@ function fakeInteraction(customId, sent, { userId = '222222222222222222', isMod 
     edit: async (p) => { log.push(['message.edit', validate(p)]); },
   };
   const i = {
-    customId, user: { id: userId }, inGuild: () => inGuild, memberPermissions: { has: () => isMod },
+    customId, user: { id: userId, tag: 'clicker#0001' }, inGuild: () => inGuild, guild, memberPermissions: { has: () => isMod },
     message, deferred: false, replied: false, isButton: () => true,
     deferReply: async (o) => { i.deferred = true; log.push(`deferReply(flags=${o?.flags})`); },
     deferUpdate: async () => { i.deferred = true; log.push('deferUpdate'); },
@@ -670,7 +674,7 @@ async function click(label, customId, sent, opts, check) {
     const order = card.components.map((c) => c.type);
     if (order.indexOf(TYPE.ActionRow) !== order.indexOf(TYPE.MediaGallery) + 1) return `the watch buttons should sit right under the thumbnail: ${order}`;
     if (o.links.join() !== '▶️ Watch on YouTube -> https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42') return `link buttons ${o.links}`;
-    const want = ['watch-yt:dQw4w9WgXcQ:42', 'copy-yt:video:dQw4w9WgXcQ', 'yt-summary:dQw4w9WgXcQ', `flag-card:yt~video~dQw4w9WgXcQ:${POSTER}`];
+    const want = ['watch-yt:dQw4w9WgXcQ:42', 'watch-together:dQw4w9WgXcQ:42', 'copy-yt:video:dQw4w9WgXcQ', 'yt-summary:dQw4w9WgXcQ', `flag-card:yt~video~dQw4w9WgXcQ:${POSTER}`];
     return o.buttons.join() === want.join() ? null : `buttons ${o.buttons}`;
   });
   await run('YouTube Short without a summary -> "Short" card with its thumbnail, no Video Summary button', 'https://www.youtube.com/shorts/abcdefghijk', {}, ([o]) => {
@@ -691,6 +695,25 @@ async function click(label, customId, sent, opts, check) {
   await click('copy link on a YouTube card', 'copy-yt:short:abcdefghijk', ytVideo, {}, copyCheck(['https://www.youtube.com/shorts/abcdefghijk']));
   await click('reveal a YouTube card', 'reveal-card:yt~video~dQw4w9WgXcQ', ytVideo, {}, (log) =>
     mediaOf(log.find((l) => l[0] === 'editReply')?.[1].components ?? []).length === 1 ? null : 'no private card');
+  const invites = [];
+  const hangout = {
+    id: 'v1', permissionsFor: () => ({ has: () => true }),
+    createInvite: async (options) => { invites.push(options); return { url: 'https://discord.gg/abc123' }; },
+  };
+  await click('Watch Together while in a voice channel -> private Watch Together invite for that channel + the link to paste', 'watch-together:dQw4w9WgXcQ:42', ytVideo, { voiceChannel: hangout }, (log) => {
+    const r = log[0]?.[0] === 'reply' && log[0][1];
+    if (!r || r.flags !== discord.MessageFlags.Ephemeral) return `reply ${JSON.stringify(r?.flags)}`;
+    const [options] = invites;
+    if (options?.targetType !== discord.InviteTargetType.EmbeddedApplication || options.targetApplication !== '880218394199220334') return `invite ${JSON.stringify(options)}`;
+    return r.content.includes('<#v1>:** https://discord.gg/abc123') && r.content.includes('<https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42>') ? null : r.content;
+  });
+  await click('Watch Together while not in a voice channel -> asked to join one first, no invite', 'watch-together:dQw4w9WgXcQ:', ytVideo, {}, (log) =>
+    (log[0]?.[1]?.content?.includes('Join a voice channel first') && invites.length === 1 ? null : `reply ${log[0]?.[1]?.content}`));
+  await click('Watch Together in a voice channel the bot can\'t make invites in -> says so', 'watch-together:dQw4w9WgXcQ:', ytVideo,
+    { voiceChannel: { ...hangout, permissionsFor: () => ({ has: () => false }) } }, (log) =>
+    (log[0]?.[1]?.content?.includes("don't have permission to create invites") && invites.length === 1 ? null : `reply ${log[0]?.[1]?.content}`));
+  await click('Watch Together in a DM -> explains it needs a server', 'watch-together:dQw4w9WgXcQ:', ytVideo, { inGuild: false }, (log) =>
+    (log[0]?.[1]?.content?.includes('only works in a server') ? null : `reply ${log[0]?.[1]?.content}`));
   await click('Watch on Discord -> the video link privately, with its preview (so Discord\'s player shows), start time kept', 'watch-yt:dQw4w9WgXcQ:42', ytVideo, {}, (log) => {
     const r = log[0]?.[0] === 'reply' && log[0][1];
     const flags = new discord.MessageFlagsBitField(r?.flags);

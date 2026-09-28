@@ -95,7 +95,7 @@ You need to be an admin of the Discord server for this part.
      instead: View Channels, Send Messages, Read Message History,
      Manage Messages, Embed Links, Create Public Threads, Send Messages
      in Threads, Manage Threads, Pin Messages, Manage Webhooks,
-     Use Application Commands.)
+     Create Invite, Use Application Commands.)
 
   4. At the very bottom of the page there is a link. Click "Copy".
 

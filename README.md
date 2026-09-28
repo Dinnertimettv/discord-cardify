@@ -67,9 +67,13 @@ knowledge needed.
    doesn't hand out video files, so the video can't play inside the card;
    Watch on Discord privately sends whoever clicks the plain link, where
    Discord shows its own playable YouTube player. (A card's picture can't be
-   a link - Discord opens its picture viewer when it's clicked.) When
-   YouTube has an AI summary of the video, a **"✨ Video Summary"** button
-   shows it privately. Channel pages and playlists are left alone.
+   a link - Discord opens its picture viewer when it's clicked.) A
+   **"📺 Watch Together"** button, clicked from a voice channel, privately
+   gives an invite that opens Discord's Watch Together activity there
+   (YouTube full-size, in sync for everyone in the call) plus the video's
+   link to paste in - Discord doesn't let bots pick the video. When YouTube
+   has an AI summary of the video, a **"✨ Video Summary"** button shows it
+   privately. Channel pages and playlists are left alone.
 7. For links to **paywalled news sites** (~75 major outlets - see
    `DEFAULT_PAYWALL_DOMAINS` in `index.js`, or override with `PAYWALL_DOMAINS`),
    the bot checks archive.ph for an existing snapshot of that exact
@@ -214,7 +218,7 @@ site doesn't expose either tag, the fallback just skips the title line.
 In **OAuth2 → URL Generator**:
 
 - Scopes: `bot`, `applications.commands` (for the `/embeds` command)
-- Bot Permissions: `View Channels`, `Send Messages`, `Read Message History`, `Manage Messages`, `Embed Links`, `Create Public Threads`, `Send Messages in Threads`, `Manage Threads`, `Pin Messages`, `Manage Webhooks`, `Use Application Commands`
+- Bot Permissions: `View Channels`, `Send Messages`, `Read Message History`, `Manage Messages`, `Embed Links`, `Create Public Threads`, `Send Messages in Threads`, `Manage Threads`, `Pin Messages`, `Manage Webhooks`, `Create Invite`, `Use Application Commands`
 
 Open the generated URL and add the bot to your server. Then, in the
 Developer Portal under **Bot**, turn off **Public Bot** so only you can add
