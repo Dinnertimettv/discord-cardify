@@ -405,6 +405,8 @@ module.exports = {
   handleSelect,
   handleReaction,
   forgetDeletedPanel,
+  // Shared with the other features that hand out roles.
+  roleProblem,
   // For tests.
   panelPayload,
   emojiKey,

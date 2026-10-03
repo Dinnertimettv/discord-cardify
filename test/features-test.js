@@ -14,6 +14,8 @@ const alerts = require('../features/alerts');
 const logs = require('../features/logs');
 const moderation = require('../features/moderation');
 const automod = require('../features/automod');
+const welcome = require('../features/welcome');
+const leveling = require('../features/leveling');
 
 const { PermissionFlagsBits, PermissionsBitField, ComponentType, MessageFlags } = discord;
 let failures = 0;
@@ -115,7 +117,7 @@ function command(name, sub, options = {}, { canManage = true, permission } = {})
 }
 const answer = (interaction) => interaction.log.findLast((l) => l[0] === 'reply' || l[0] === 'editReply')?.[1];
 const run = async (interaction) => {
-  for (const feature of [roles, expressions, alerts, logs, moderation, automod]) if (await feature.handleCommand(interaction)) return interaction;
+  for (const feature of [roles, expressions, alerts, logs, moderation, automod, welcome, leveling]) if (await feature.handleCommand(interaction)) return interaction;
   throw new Error(`no feature handled /${interaction.commandName}`);
 };
 
@@ -610,6 +612,141 @@ function click(message, customId, member = alex) {
     const i = await run(command('automod', 'invites', { on: true }));
     guild.autoModerationRules.create = saved;
     return answer(i).content.includes('Manage Server') ? null : answer(i).content;
+  });
+
+  console.log('\n----- welcome -----');
+  const welcomeChannel = { id: 'c-welcome', sent: [], permissionsFor: () => ({ has: () => true }), send: async (p) => welcomeChannel.sent.push(json(p)) };
+  guild.channels.cache.set('c-welcome', welcomeChannel);
+  guild.memberCount = 42;
+  const lastWelcome = () => welcomeChannel.sent.at(-1);
+  const fakeClient = { channels: { fetch: async (id) => guild.channels.cache.get(id) } };
+  const newcomer = Object.assign(makeMember('u-new'), {
+    displayName: 'Newbie',
+    client: fakeClient,
+    displayAvatarURL: () => 'https://cdn.discordapp.com/avatars/u-new/a.png',
+  });
+  let intentOn = false;
+  welcome.init({ membersIntentOn: () => intentOn });
+  await check('/welcome without Manage Server -> refused', async () => {
+    const i = await run(command('welcome', 'set', { channel: welcomeChannel }, { canManage: false }));
+    return answer(i).content.includes('Manage Server') ? null : answer(i).content;
+  });
+  await check('/welcome set with the intent off -> saved, with a warning about the intent', async () => {
+    const text = answer(await run(command('welcome', 'set', { channel: welcomeChannel }))).content;
+    return text.startsWith('Welcome messages now go to <#c-welcome>') && text.includes('Server Members Intent') ? null : text;
+  });
+  await check('a member joins -> welcome card with the placeholders filled, only they are pinged', async () => {
+    intentOn = true;
+    await welcome.memberJoined(newcomer);
+    const sent = lastWelcome();
+    const text = textOf(sent);
+    if (text !== 'Welcome to **Test Server**, <@u-new>! You are member #42.') return text;
+    if (!walk(sent.components).some((c) => c.type === ComponentType.Thumbnail)) return 'no avatar';
+    return sent.allowedMentions.users.join() === 'u-new' && sent.flags === MessageFlags.IsComponentsV2 ? null : JSON.stringify(sent.allowedMentions);
+  });
+  await check('/welcome autorole with a moderator role -> refused', async () => {
+    const text = answer(await run(command('welcome', 'autorole', { role: 'r-mod' }))).content;
+    return text.includes('moderator') ? null : text;
+  });
+  await check('/welcome autorole Gamer -> new members get it', async () => {
+    await run(command('welcome', 'autorole', { role: 'r-gamer' }));
+    const member = Object.assign(makeMember('u-new2'), { displayName: 'Two', client: fakeClient });
+    await welcome.memberJoined(member);
+    return member.log.join() === '+r-gamer' ? null : member.log.join();
+  });
+  await check('/welcome goodbye with custom text -> posted when someone leaves, nobody pinged', async () => {
+    await run(command('welcome', 'goodbye', { channel: welcomeChannel, message: 'Bye {name} from {server}, {user}' }));
+    await welcome.memberLeft(newcomer);
+    const sent = lastWelcome();
+    return textOf(sent) === 'Bye Newbie from Test Server, <@u-new>' && sent.allowedMentions.parse.length === 0 ? null : textOf(sent);
+  });
+  await check('/welcome test -> a preview that pings nobody', async () => {
+    const before = welcomeChannel.sent.length;
+    const i = command('welcome', 'test');
+    i.client = fakeClient;
+    i.member = newcomer;
+    await run(i);
+    const sent = lastWelcome();
+    return welcomeChannel.sent.length === before + 1 && sent.allowedMentions.parse.length === 0 && answer(i).content.includes('Posted a preview') ? null : answer(i).content;
+  });
+  await check('/welcome off welcome -> no more welcome messages; status shows it', async () => {
+    await run(command('welcome', 'off', { which: 'welcome' }));
+    const before = welcomeChannel.sent.length;
+    await welcome.memberJoined(Object.assign(makeMember('u-new3'), { displayName: 'Three', client: fakeClient }));
+    const text = answer(await run(command('welcome', 'status'))).content;
+    return welcomeChannel.sent.length === before && text.includes('**Welcome:** off') && text.includes('**Goodbye:** on, in <#c-welcome>') && text.includes('<@&r-gamer>') ? null : text;
+  });
+
+  console.log('\n----- leveling -----');
+  const chat = [];
+  const chatChannel = { id: 'c-chat', send: async (p) => chat.push(p) };
+  let clock = 1_000_000;
+  const chatter = makeMember('u-chatter');
+  const chatMessage = (member, extra = {}) => ({ guildId: 'g1', guild, member, author: { id: member.id, bot: false }, channel: chatChannel, client: fakeClient, ...extra });
+  const say = (member = chatter) => leveling.onMessage(chatMessage(member), (clock += 61_000));
+  const rankText = async (id) => textOf(json(answer(await run(command('rank', null, id ? { member: { id } } : {})))));
+  await check('the level curve matches MEE6 (100, 255, 475 XP)', async () => {
+    const levels = [99, 100, 254, 255, 475].map((xp) => leveling.levelFromXp(xp).level).join();
+    return levels === '0,1,1,2,3' ? null : levels;
+  });
+  await check('leveling off (the default) -> /rank says so', async () => {
+    await say();
+    const text = answer(await run(command('rank', null))).content;
+    return text.includes("isn't on") ? null : text;
+  });
+  await check('/levels without Manage Server -> refused', async () => {
+    const text = answer(await run(command('levels', 'on', { on: true }, { canManage: false }))).content;
+    return text.includes('Manage Server') ? null : text;
+  });
+  await check('/levels on, reward at level 2 -> level-ups announced where they chat, the role given', async () => {
+    await run(command('levels', 'on', { on: true }));
+    await run(command('levels', 'reward', { level: 2, role: 'r-artist' }));
+    for (let n = 0; n < 20; n++) await say();
+    const ups = chat.map((p) => p.content);
+    if (!ups[0]?.startsWith('🎉 <@u-chatter> reached **level 1**')) return ups.join(' | ');
+    if (!ups.some((t) => t.includes('level 2'))) return ups.join(' | ');
+    return chatter.log.join() === '+r-artist' && chat.every((p) => p.allowedMentions.users.join() === 'u-chatter') ? null : chatter.log.join();
+  });
+  await check('two messages within a minute -> only the first earns XP', async () => {
+    const fast = makeMember('u-fast');
+    clock += 61_000;
+    await leveling.onMessage(chatMessage(fast), clock);
+    await leveling.onMessage(chatMessage(fast), clock + 30_000);
+    const text = await rankText('u-fast');
+    const xp = Number(text.match(/([\d,]+) XP total/)[1]);
+    return xp >= 15 && xp <= 25 ? null : text;
+  });
+  await check('bots and webhooks earn nothing', async () => {
+    await leveling.onMessage(chatMessage({ id: 'u-bot' }, { author: { id: 'u-bot', bot: true } }), (clock += 61_000));
+    await leveling.onMessage(chatMessage({ id: 'u-hook' }, { webhookId: 'w1' }), (clock += 61_000));
+    const texts = [await rankText('u-bot'), await rankText('u-hook')];
+    return texts.every((t) => t.includes('unranked') && t.includes(' 0 XP total')) ? null : texts.join(' | ');
+  });
+  await check('/rank -> level, rank, progress bar, avatar', async () => {
+    const i = command('rank', null);
+    i.user.displayAvatarURL = () => 'https://cdn.discordapp.com/avatars/u-admin/a.png';
+    const payload = json(answer(await run(i)));
+    const text = textOf(payload);
+    return text.includes('**Level 0**') && text.includes('unranked') && text.includes('`░░░░░░░░░░░░`') && walk(payload.components).some((c) => c.type === ComponentType.Thumbnail) ? null : text;
+  });
+  await check('/leaderboard -> members by XP, nobody pinged', async () => {
+    const payload = answer(await run(command('leaderboard', null)));
+    const text = textOf(json(payload));
+    return text.includes('🥇 <@u-chatter> - level') && text.includes('🥈 <@u-fast>') && payload.allowedMentions.parse.length === 0 ? null : text;
+  });
+  await check('/levels channel and message -> announced there with the custom text', async () => {
+    const levelChannel = { id: 'c-levels', sent: [], send: async (p) => levelChannel.sent.push(p) };
+    guild.channels.cache.set('c-levels', levelChannel);
+    await run(command('levels', 'channel', { channel: levelChannel }));
+    await run(command('levels', 'message', { text: 'GG {user}, you hit {level}!' }));
+    const newbie = makeMember('u-newbie');
+    for (let n = 0; n < 7; n++) await say(newbie);
+    return levelChannel.sent[0]?.content === 'GG <@u-newbie>, you hit 1!' ? null : JSON.stringify(levelChannel.sent);
+  });
+  await check('/levels reset -> their XP is gone; /levels status lists the settings', async () => {
+    await run(command('levels', 'reset', { member: { id: 'u-chatter' } }));
+    const text = answer(await run(command('levels', 'status'))).content;
+    return text.includes('**Leveling:** on') && text.includes('<#c-levels>') && text.includes('level 2 → <@&r-artist>') && text.includes('**Members with XP:** 2') ? null : text;
   });
 
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL FEATURE TESTS PASSED');

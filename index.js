@@ -13,7 +13,9 @@ const alerts = require('./features/alerts');
 const logs = require('./features/logs');
 const moderation = require('./features/moderation');
 const automod = require('./features/automod');
-const FEATURES = [roles, expressions, alerts, logs, moderation, automod];
+const welcome = require('./features/welcome');
+const leveling = require('./features/leveling');
+const FEATURES = [roles, expressions, alerts, logs, moderation, automod, welcome, leveling];
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -1270,6 +1272,8 @@ client.on(Events.MessageCreate, async (message) => {
   const isTestPost = Boolean(TEST_WEBHOOK_ID) && message.webhookId === TEST_WEBHOOK_ID;
   if (message.author.bot && !isTestPost) return;
   if (message.guildId && !isAllowedServer(message.guildId)) return;
+  // XP counts in every channel, even ones with link fixing off.
+  leveling.onMessage(message).catch((err) => console.error('Leveling failed:', err));
   if (message.inGuild() && isLinkFixingOff(message)) return;
   try {
     await handleMessage(message);
@@ -2478,6 +2482,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     );
   });
   logs.init(client);
+  welcome.init({ membersIntentOn: () => client.options.intents.has(GatewayIntentBits.GuildMembers) });
   // Alerts reuse the Twitch and YouTube cards from this file.
   alerts.init({
     client,
@@ -2520,12 +2525,14 @@ client.on(Events.MessageUpdate, (before, after) => {
 for (const [event, report] of [
   [Events.GuildBanAdd, logs.memberBanned],
   [Events.GuildBanRemove, logs.memberUnbanned],
-  // These two only fire with the Server Members intent (see enableMemberEvents).
+  // These only fire with the Server Members intent (see enableMemberEvents).
   [Events.GuildMemberAdd, logs.memberJoined],
   [Events.GuildMemberRemove, logs.memberLeft],
+  [Events.GuildMemberAdd, welcome.memberJoined],
+  [Events.GuildMemberRemove, welcome.memberLeft],
 ]) {
   client.on(event, (subject) => {
-    if (isAllowedServer(subject.guild.id)) report(subject).catch((err) => console.error(`Mod log (${event}) failed:`, err));
+    if (isAllowedServer(subject.guild.id)) report(subject).catch((err) => console.error(`${report.name} failed:`, err));
   });
 }
 

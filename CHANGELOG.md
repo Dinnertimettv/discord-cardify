@@ -68,10 +68,29 @@ Cardify grows from a link bot into an all-in-one server bot.
 - Joins and leaves need the **Server Members Intent** (Developer Portal →
   Bot); Cardify checks at startup and uses it only when it's on.
 
+**Welcome messages** (`/welcome`, needs Manage Server)
+- `/welcome set` greets new members in a channel with a card showing their
+  picture; `/welcome goodbye` posts when someone leaves. Custom text can
+  use `{user}`, `{name}`, `{server}` and `{count}`.
+- `/welcome autorole` gives every new member a role (with the same safety
+  checks as role panels).
+- `/welcome test` previews the message; `/welcome status` shows the setup.
+- Needs the **Server Members Intent** - `/welcome` says so while it's off.
+
+**Leveling** (`/rank`, `/leaderboard`, `/levels`)
+- Members earn 15-25 XP for chatting, at most once a minute (so spamming
+  doesn't pay), and level up on the same curve as MEE6.
+- Level-ups are announced where the member is chatting, or in a channel
+  you pick, with custom text (`{user}`, `{level}`).
+- `/levels reward` gives a role at a level; `/levels reset` clears a
+  member's XP. Leveling is off until an admin runs `/levels on`.
+- `/rank` shows a member's level, rank and progress bar; `/leaderboard`
+  shows the top 10.
+
 ### Permissions
 
 - **Manage Roles** (and Cardify's role above the roles it hands out) - for
-  role panels.
+  role panels, the welcome auto-role, and level rewards.
 - **Create Expressions** - for `/emoji` and `/sound`.
 - **Timeout / Kick / Ban Members** and **Manage Messages** - for `/mod`.
 - **Manage Server** - for `/automod`.
