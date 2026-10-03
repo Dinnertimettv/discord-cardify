@@ -25,12 +25,16 @@ const {
 } = require('discord.js');
 const { createStore } = require('../store');
 const ytdlp = require('../ytdlp');
+const tempVoice = require('./tempvoice');
 
 const store = createStore('music.json', { guilds: {} });
 
 const MUSIC_COLOR = 0x9b59b6;
 // voiceChannels: the voice channels music may join (empty: any).
-const DEFAULTS = { djRoleId: null, voiceChannels: [], volume: 60, maxQueue: 100, stay: false };
+// voiceChatOnly: music commands only work in the chat of the voice channel
+// the music is in (every voice channel has its own chat), so the commands and
+// the "Now playing" card stay with the people listening.
+const DEFAULTS = { djRoleId: null, voiceChannels: [], volume: 60, maxQueue: 100, stay: false, voiceChatOnly: true };
 const MAX_VOLUME = 150;
 // Leave the voice channel this long after the queue runs out, or after everyone else leaves.
 const IDLE_LEAVE_MS = 3 * 60_000;
@@ -112,6 +116,12 @@ const SETUP_COMMAND = new SlashCommandBuilder()
       .setDescription('Choose which voice channels I can play music in (with none chosen: any)')
       .addChannelOption((o) => o.setName('channel').setDescription('A voice channel').setRequired(true).addChannelTypes(ChannelType.GuildVoice))
       .addBooleanOption((o) => o.setName('allowed').setDescription('Can I play music there?').setRequired(true))
+  )
+  .addSubcommand((s) =>
+    s
+      .setName('voice-chat-only')
+      .setDescription("Only take music commands in the chat of the music's voice channel")
+      .addBooleanOption((o) => o.setName('on').setDescription('On (recommended), or off to allow any text channel').setRequired(true))
   )
   .addSubcommand((s) =>
     s
@@ -526,7 +536,28 @@ async function startSession(interaction, voiceChannel) {
   session.connection.subscribe(session.player);
   sessions.set(session.guildId, session);
   console.log(`Music: joined voice channel ${voiceChannel.id} in "${session.guild.name}".`);
+  await postTutorial(session);
   return session;
+}
+
+// Every time the music joins: a quick how-to in the chat, before the first song.
+async function postTutorial(session) {
+  const channel = await textChannelOf(session);
+  await channel?.send(tutorialPayload(session.guildId)).catch((err) => console.error('Music: the how-to card failed:', err.message));
+}
+
+function tutorialPayload(guildId) {
+  const { voiceChatOnly, stay } = settingsFor(guildId);
+  const lines = [
+    "### 🎵 Hi! I'm here to play music",
+    '🔎 **Play a song:** `/play song:` and type its name, or paste a YouTube or Spotify link',
+    '📻 **Play the radio:** `/radio station:` and pick one, like lofi',
+    '⏯️ **Pause, skip or stop:** press the buttons on the "Now playing" card',
+    "📜 **See what's next:** `/music queue`  ·  🔊 **Volume:** `/music volume`",
+    `-# ${voiceChatOnly ? "Music commands work right here in this channel's chat. " : ''}${stay ? 'I stay until someone uses `/music stop`.' : 'I leave when the music ends or everyone leaves.'}`,
+  ];
+  const container = new ContainerBuilder().setAccentColor(MUSIC_COLOR).addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.join('\n')));
+  return { flags: MessageFlags.IsComponentsV2, components: [container], allowedMentions: { parse: [] } };
 }
 
 function trackEnded(session, resource) {
@@ -701,6 +732,18 @@ function controlProblem(interaction, session, { ownTrack = false } = {}) {
   return `Only members with <@&${djRoleId}> can do that while others are listening.`;
 }
 
+// With voice-chat-only on: where to go instead, or null when this is the place.
+function chatProblem(interaction, voiceChannelId) {
+  if (!settingsFor(interaction.guildId).voiceChatOnly || interaction.channelId === voiceChannelId) return null;
+  return `🎵 Music commands work in <#${voiceChannelId}>'s own chat. Open the voice channel's chat (the **💬** button) and try again there.`;
+}
+
+// The allowed voice channels; a Join to Create channel counts for the ones it makes.
+function voiceAllowed(guildId, channelId) {
+  const { voiceChannels } = settingsFor(guildId);
+  return !voiceChannels.length || voiceChannels.includes(channelId) || voiceChannels.includes(tempVoice.hubOf(guildId, channelId));
+}
+
 const privately = (interaction, content) =>
   interaction.deferred || interaction.replied
     ? interaction.followUp({ content, flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } })
@@ -713,15 +756,16 @@ const privately = (interaction, content) =>
 async function queueTracks(interaction, find) {
   const voiceChannel = interaction.member?.voice?.channel;
   if (!voiceChannel) return privately(interaction, 'Join a voice channel first, then I\'ll play there.');
-  const { voiceChannels } = settingsFor(interaction.guildId);
-  if (voiceChannels.length && !voiceChannels.includes(voiceChannel.id)) {
-    return privately(interaction, `I can only play music in ${voiceChannels.map((id) => `<#${id}>`).join(', ')}. Join one of those first.`);
+  if (!voiceAllowed(interaction.guildId, voiceChannel.id)) {
+    return privately(interaction, `I can only play music in ${settingsFor(interaction.guildId).voiceChannels.map((id) => `<#${id}>`).join(', ')}. Join one of those first.`);
   }
   let session = sessions.get(interaction.guildId);
   if (session && session.voiceChannelId !== voiceChannel.id && session.current) {
     return privately(interaction, `I'm already playing in <#${session.voiceChannelId}> - join that channel to add songs.`);
   }
   if (voiceChannel.type === ChannelType.GuildStageVoice) return privately(interaction, "I can't play in Stage channels - use a regular voice channel.");
+  const wrongPlace = chatProblem(interaction, voiceChannel.id);
+  if (wrongPlace) return privately(interaction, wrongPlace);
   const me = interaction.guild.members.me;
   if (!voiceChannel.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak]) || !voiceChannel.joinable) {
     return privately(interaction, `I can't join <#${voiceChannel.id}> - I need the Connect and Speak permissions there (or it's full).`);
@@ -899,6 +943,9 @@ const ACTIONS = {
 async function musicCommand(interaction) {
   const session = sessions.get(interaction.guildId);
   if (!session) return privately(interaction, "I'm not playing anything - start with `/play` or `/radio`.");
+  // Admins can still step in from anywhere.
+  const wrongPlace = !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) && chatProblem(interaction, session.voiceChannelId);
+  if (wrongPlace) return privately(interaction, wrongPlace);
   const result = ACTIONS[interaction.options.getSubcommand()](session, interaction);
   if (result.problem) return privately(interaction, result.problem);
   if (result.payload) return interaction.reply(result.payload);
@@ -943,6 +990,11 @@ async function setup(interaction) {
     text = settings.voiceChannels.length
       ? `I can play music in: ${settings.voiceChannels.map((id) => `<#${id}>`).join(', ')}.`
       : 'I can play music in any voice channel.';
+  } else if (sub === 'voice-chat-only') {
+    settings.voiceChatOnly = interaction.options.getBoolean('on', true);
+    text = settings.voiceChatOnly
+      ? 'Music commands now only work in the chat of the voice channel the music is in (the **💬** button on a voice channel), and the "Now playing" card shows up there.'
+      : 'Music commands work in any text channel, and the "Now playing" card goes where someone uses `/play`.';
   } else if (sub === 'volume') {
     settings.volume = interaction.options.getInteger('percent', true);
     text = `The music starts at ${settings.volume}% volume.`;
@@ -963,7 +1015,8 @@ async function setup(interaction) {
       [
         `**DJ role:** ${settings.djRoleId ? `<@&${settings.djRoleId}>` : 'none - everyone listening can control the music'}`,
         `**Voice channels:** ${settings.voiceChannels.length ? settings.voiceChannels.map((id) => `<#${id}>`).join(', ') : 'any'}`,
-        '-# Which text channels the music commands work in, and who can use them: `/access`',
+        `**Commands work in:** ${settings.voiceChatOnly ? "the music's voice channel chat only" : 'any text channel'}`,
+        '-# Who can use the music commands: `/access`',
         `**Starting volume:** ${settings.volume}%`,
         `**Queue limit:** ${settings.maxQueue} songs`,
         `**24/7:** ${settings.stay ? 'on' : 'off - I leave when the music ends or everyone leaves'}`,
@@ -994,8 +1047,11 @@ function voiceStateChanged(before, after) {
   const session = sessions.get(after.guild.id);
   if (!session || session.ended) return;
   if (after.id === client?.user?.id) {
-    // Moved by someone: follow along. (Disconnects end the session through the connection.)
-    if (after.channelId) session.voiceChannelId = after.channelId;
+    // Moved by someone: follow along, chat too. (Disconnects end the session through the connection.)
+    if (after.channelId) {
+      session.voiceChannelId = after.channelId;
+      if (settingsFor(session.guildId).voiceChatOnly) session.textChannelId = after.channelId;
+    }
   } else if (before.channelId !== session.voiceChannelId && after.channelId !== session.voiceChannelId) return;
   if (settingsFor(session.guildId).stay) return;
   const listeners = listenersIn(session);
@@ -1034,7 +1090,8 @@ module.exports = {
   init,
   musicSettings: (guildId) => settingsFor(guildId),
   setMusicSettings,
-  // For tests.
+  // For tests and previews.
+  tutorialPayload,
   engine,
   sessions,
   isPublicLink,

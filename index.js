@@ -17,13 +17,14 @@ const automod = require('./features/automod');
 const welcome = require('./features/welcome');
 const leveling = require('./features/leveling');
 const music = require('./features/music');
+const tempVoice = require('./features/tempvoice');
 const help = require('./features/help');
 const setup = require('./features/setup');
 // Who can use what, and where (/access, /setup).
 const access = require('./features/access');
-const FEATURES = [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, help, setup];
+const FEATURES = [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, tempVoice, help, setup];
 // Buttons and menus that belong to a feature follow its /access rules too.
-const COMPONENT_FEATURES = { role: 'roles', 'role-menu': 'roles', music: 'music' };
+const COMPONENT_FEATURES = { role: 'roles', 'role-menu': 'roles', music: 'music', vc: 'tempvoice' };
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -1841,6 +1842,7 @@ const BUTTON_HANDLERS = {
   'watch-yt': { run: watchOnDiscord, failMessage: "Couldn't open that video." },
   role: { run: (interaction, roleId) => roles.handleButton(interaction, roleId), failMessage: "Couldn't change your role - try again in a moment." },
   music: { run: (interaction, action) => music.handleButton(interaction, action), failMessage: "Couldn't do that - try again in a moment." },
+  vc: { run: (interaction, action) => tempVoice.handleButton(interaction, action), failMessage: "Couldn't change the channel - I may be missing the Manage Roles permission." },
   'x-thread': { run: postThread, failMessage: `Couldn't post the thread - ${DELETED_OR_PRIVATE}` },
   dl: { run: downloadVideo, failMessage: `Couldn't get the video - ${DELETED_OR_PRIVATE}` },
   'translate-x': { run: translatePost, failMessage: "Couldn't translate that post right now - try again in a moment." },
@@ -2573,6 +2575,8 @@ client.once(Events.ClientReady, async (readyClient) => {
   });
   // yt-dlp (YouTube and Spotify audio): downloaded once, then kept up to date.
   if (isMainProgram) ytdlp.start();
+  // Join to Create: tidy up channels that emptied while the bot was offline.
+  await tempVoice.init(client).catch((err) => console.error('Join to Create startup cleanup failed:', err));
   // Alerts reuse the Twitch and YouTube cards from this file.
   alerts.init({
     client,
@@ -2604,7 +2608,8 @@ for (const [event, added] of [
   });
 }
 
-// The music player leaves when everyone else does.
+// The music player leaves when everyone else does; Join to Create makes and
+// removes voice channels.
 client.on(Events.VoiceStateUpdate, (before, after) => {
   if (!isAllowedServer(after.guild.id)) return;
   try {
@@ -2612,7 +2617,10 @@ client.on(Events.VoiceStateUpdate, (before, after) => {
   } catch (err) {
     console.error('Music voice update failed:', err);
   }
+  tempVoice.voiceStateChanged(before, after).catch((err) => console.error('Join to Create voice update failed:', err));
 });
+
+client.on(Events.ChannelDelete, (channel) => tempVoice.channelDeleted(channel));
 
 // A deleted role panel message takes its panel with it; deletions and edits
 // go in the mod log.

@@ -17,6 +17,7 @@ const automod = require('../features/automod');
 const welcome = require('../features/welcome');
 const leveling = require('../features/leveling');
 const music = require('../features/music');
+const tempVoice = require('../features/tempvoice');
 const access = require('../features/access');
 const help = require('../features/help');
 const setup = require('../features/setup');
@@ -124,7 +125,7 @@ function command(name, sub, options = {}, { canManage = true, permission } = {})
 }
 const answer = (interaction) => interaction.log.findLast((l) => ['reply', 'editReply', 'followUp'].includes(l[0]))?.[1];
 const run = async (interaction) => {
-  for (const feature of [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, help, setup]) if (await feature.handleCommand(interaction)) return interaction;
+  for (const feature of [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, tempVoice, help, setup]) if (await feature.handleCommand(interaction)) return interaction;
   throw new Error(`no feature handled /${interaction.commandName}`);
 };
 
@@ -891,12 +892,17 @@ function click(message, customId, member = alex) {
   const listener = (id) => ({ id, user: { bot: false } });
   const vc = { id: 'v1', type: discord.ChannelType.GuildVoice, guild, joinable: true, permissionsFor: () => ({ has: () => true }) };
   vc.members = new discord.Collection([['u-admin', listener('u-admin')], ['u-dj', listener('u-dj')], ['u-fan', listener('u-fan')]]);
+  // The voice channel's own chat lands in the same fake message list.
+  vc.send = (payload) => channel.send(payload);
   guild.channels.cache.set('v1', vc);
   const inVoice = (id, roleIds = []) => ({ id, voice: { channel: vc, channelId: 'v1' }, roles: { cache: new Set(roleIds) } });
-  const musicCommand = (name, sub, options = {}, { user = 'u-admin', canManage = true, voice = true, roleIds = [] } = {}) => {
+  // `at`: where the command is typed - the voice channel's chat (v1) or a text channel (c1).
+  const musicCommand = (name, sub, options = {}, { user = 'u-admin', canManage = true, voice = true, roleIds = [], at = voice ? 'v1' : 'c1' } = {}) => {
     const i = command(name, sub, options, { canManage });
     i.user = { id: user, tag: `${user}#0001` };
     i.member = voice ? inVoice(user, roleIds) : { id: user, voice: { channel: null, channelId: null }, roles: { cache: new Set() } };
+    i.channelId = at;
+    i.channel = at === 'v1' ? vc : channel;
     return i;
   };
   const sent = () => [...messages.values()];
@@ -945,6 +951,13 @@ function click(message, customId, member = alex) {
       ? null
       : cardText;
   });
+  const tutorials = () => sent().filter((m) => cardText(m).includes("I'm here to play music"));
+  await check('joining -> a quick how-to card in the chat, before the first song', async () => {
+    const [tutorial] = tutorials();
+    const text = tutorial ? cardText(tutorial) : '';
+    const order = sent().indexOf(tutorial) < sent().findIndex((m) => cardText(m).includes('### 🎶 Now playing'));
+    return tutorials().length === 1 && order && text.includes('`/play song:`') && text.includes("right here in this channel's chat") && tutorial.payload.allowedMentions.parse.length === 0 ? null : text;
+  });
   await check('/play a .m3u playlist -> queued as its stream; the card shows what is next', async () => {
     const text = replyText(await run(musicCommand('play', null, { song: 'https://music.example/list.m3u' })));
     const track = session().queue[0];
@@ -987,8 +1000,15 @@ function click(message, customId, member = alex) {
     return old && buttonIds(old.payload).length === 0 && textOf(session().nowPlaying.message.payload).includes('### 🎶 Now playing') ? null : cards.map(cardText).join(' | ');
   });
   await check('someone outside the voice channel -> told to join it', async () => {
-    const text = replyText(await run(musicCommand('music', 'pause', {}, { user: 'u-other', canManage: false, voice: false })));
+    const text = replyText(await run(musicCommand('music', 'pause', {}, { user: 'u-other', canManage: false, voice: false, at: 'v1' })));
     return text.includes('Join <#v1>') ? null : text;
+  });
+  await check('/play or /music from a text channel -> pointed to the voice channel chat (admins can still use /music)', async () => {
+    const play = replyText(await run(musicCommand('play', null, { song: 'https://music.example/My_Song.mp3' }, { at: 'c1' })));
+    const member = replyText(await run(musicCommand('music', 'queue', {}, { user: 'u-fan', canManage: false, at: 'c1' })));
+    const admin = replyText(await run(musicCommand('music', 'queue', {}, { at: 'c1' })));
+    const hint = "Music commands work in <#v1>'s own chat";
+    return play.includes(hint) && member.includes(hint) && admin.includes('### 📜 Queue') && tutorials().length === 1 ? null : `${play} | ${member} | ${admin}`;
   });
   await check('⏸️ on the card -> paused, the card shows Resume; ▶️ -> playing again', async () => {
     const message = session().nowPlaying.message;
@@ -1071,6 +1091,20 @@ function click(message, customId, member = alex) {
     const text = replyText(await run(musicCommand('music', 'stop')));
     const after = replyText(await run(musicCommand('music', 'queue')));
     return text.includes('stopped the music') && !music.sessions.has('g1') && buttonIds(card.payload).length === 0 && after.includes("I'm not playing anything") ? null : `${text} | ${after}`;
+  });
+  await check('/music-setup voice-chat-only off -> /play works from a text channel; on again -> the chat follows the bot when moved', async () => {
+    const off = replyText(await run(musicCommand('music-setup', 'voice-chat-only', { on: false })));
+    const started = replyText(await run(musicCommand('play', null, { song: 'https://music.example/My_Song.mp3' }, { at: 'c1' })));
+    const inText = session().textChannelId;
+    const tutorial = cardText(tutorials().at(-1));
+    const on = replyText(await run(musicCommand('music-setup', 'voice-chat-only', { on: true })));
+    music.voiceStateChanged({ channelId: 'v1', id: 'u-cardify', guild }, { channelId: 'v2', id: 'u-cardify', guild });
+    const moved = session().textChannelId;
+    const status = replyText(await run(musicCommand('music-setup', 'status')));
+    await run(musicCommand('music', 'stop'));
+    return off.includes('any text channel') && started.startsWith('▶️') && inText === 'c1' && tutorials().length === 2 && !tutorial.includes('right here') && on.includes("voice channel the music is in") && moved === 'v2' && status.includes("**Commands work in:** the music's voice channel chat only")
+      ? null
+      : `${off} | ${started} | ${inText} | ${tutorial} | ${on} | ${moved} | ${status}`;
   });
 
   console.log('\n----- music: YouTube and Spotify -----');
@@ -1168,6 +1202,153 @@ function click(message, customId, member = alex) {
     return warning?.payload.content.includes('**Never Gonna Give You Up**') && session().current.title === 'Track 1' ? null : sent().map((m) => m.payload.content).filter(Boolean).join(' | ');
   });
   await run(musicCommand('music', 'stop'));
+
+  console.log('\n----- join to create -----');
+  const meBefore = guild.members.me;
+  const cardifyMe = { id: 'u-cardify', permissions: { has: () => true } };
+  guild.members.me = cardifyMe;
+  const category = {
+    id: 'cat1',
+    permissionOverwrites: { cache: new discord.Collection([['r-gamer', { id: 'r-gamer', type: discord.OverwriteType.Role, allow: new PermissionsBitField(0n), deny: new PermissionsBitField(PermissionFlagsBits.MoveMembers) }]]) },
+  };
+  const makeVoice = (id, extra = {}) => {
+    const voiceChannel = { id, guildId: 'g1', type: discord.ChannelType.GuildVoice, members: new discord.Collection(), sent: [], deleted: false, ...extra };
+    voiceChannel.send = async (p) => voiceChannel.sent.push(json(p));
+    voiceChannel.delete = async () => {
+      voiceChannel.deleted = true;
+      guild.channels.cache.delete(id);
+    };
+    voiceChannel.permissionOverwrites = { cache: new discord.Collection(), set: async (list) => { voiceChannel.overwrites = list; } };
+    guild.channels.cache.set(id, voiceChannel);
+    return voiceChannel;
+  };
+  const hub = makeVoice('v-hub', { name: 'Join here', parentId: 'cat1', parent: category, bitrate: 64000 });
+  const madeChannels = [];
+  let nextRoom = 1;
+  guild.channels.create = async (options) => {
+    const made = makeVoice(`v-new${nextRoom++}`, { name: options.name, parentId: options.parent ?? null, parent: options.parent ? category : null, options });
+    made.overwrites = options.permissionOverwrites;
+    madeChannels.push(made);
+    return made;
+  };
+  // Moving someone updates the channels' member lists and tells Join to Create, like Discord's voice updates.
+  const moveTo = async (member, toId) => {
+    const fromId = member.voice.channelId;
+    guild.channels.cache.get(fromId)?.members.delete(member.id);
+    guild.channels.cache.get(toId)?.members.set(member.id, member);
+    member.voice.channelId = toId;
+    await tempVoice.voiceStateChanged({ channelId: fromId }, { guild, channelId: toId, member, channel: guild.channels.cache.get(toId) ?? null });
+  };
+  const voiceMember = (id, name) => {
+    const member = { id, displayName: name, user: { id, bot: false, tag: `${name}#0001` }, guild };
+    member.voice = {
+      channelId: null,
+      setChannel: async (target) => {
+        if (!member.voice.channelId) throw new Error('Target user is not connected to voice.');
+        await moveTo(member, typeof target === 'string' ? target : target.id);
+      },
+    };
+    return member;
+  };
+  const alexVoice = voiceMember('u-alex', 'Alex');
+  const samVoice = voiceMember('u-sam', 'Sam');
+  const roomOf = () => madeChannels[0];
+  const overwrite = (id) => roomOf().overwrites.find((o) => o.id === id);
+  const vcHas = (id, kind, permission) => (BigInt(overwrite(id)?.[kind] ?? 0) & permission) !== 0n;
+  const vcClick = async (action, member, { canManage = false } = {}) => {
+    const log = [];
+    const i = { customId: `vc:${action}`, guildId: 'g1', guild, channelId: roomOf().id, channel: roomOf(), user: { id: member.id, tag: `${member.displayName}#0001` }, member, memberPermissions: { has: () => canManage } };
+    i.reply = async (p) => log.push(p);
+    await tempVoice.handleButton(i, action);
+    return log[0];
+  };
+
+  await check('/join-to-create without Manage Server -> refused', async () => {
+    const text = answer(await run(command('join-to-create', 'add', { channel: hub }, { canManage: false }))).content;
+    return text.includes('Manage Server') && tempVoice.hubsIn('g1').length === 0 ? null : text;
+  });
+  await check('/join-to-create without the permissions it needs -> says which', async () => {
+    guild.members.me = { id: 'u-cardify', permissions: { has: (p) => p !== PermissionFlagsBits.ManageRoles } };
+    const text = answer(await run(command('join-to-create', 'add', { channel: hub }))).content;
+    guild.members.me = cardifyMe;
+    return text.includes('**Manage Roles**') && tempVoice.hubsIn('g1').length === 0 ? null : text;
+  });
+  await check('/join-to-create add channel name limit -> saved', async () => {
+    const text = answer(await run(command('join-to-create', 'add', { channel: hub, name: "🎮 {name}'s room", limit: 4 }))).content;
+    return text.includes('<#v-hub> is a Join to Create channel') && text.includes('up to 4 people') && tempVoice.hubsIn('g1').join() === 'v-hub' ? null : text;
+  });
+  await check("joining it -> their own channel in the same category, named after them, with the category's permissions and theirs; moved in; a card with buttons", async () => {
+    await moveTo(alexVoice, 'v-hub');
+    const room = roomOf();
+    if (!room || madeChannels.length !== 1) return `${madeChannels.length} channels`;
+    const card = room.sent[0];
+    const buttons = walk(card?.components ?? []).filter((c) => c.type === ComponentType.Button).map((c) => c.custom_id).join();
+    return room.name === "🎮 Alex's room" && room.options.userLimit === 4 && room.options.bitrate === 64000 && room.parentId === 'cat1' && alexVoice.voice.channelId === room.id &&
+      vcHas('u-alex', 'allow', PermissionFlagsBits.ManageChannels) && vcHas('u-alex', 'allow', PermissionFlagsBits.MoveMembers) && vcHas('r-gamer', 'deny', PermissionFlagsBits.MoveMembers) && vcHas('u-cardify', 'allow', PermissionFlagsBits.Connect) &&
+      buttons === 'vc:lock,vc:unlock,vc:claim' && textOf(card).includes('<@u-alex>, this channel is all yours') && textOf(card).includes('`/play` right here') && card.allowedMentions.parse.length === 0 && tempVoice.hubOf('g1', room.id) === 'v-hub'
+      ? null
+      : `${room.name} ${alexVoice.voice.channelId} ${buttons} ${textOf(card ?? { components: [] })}`;
+  });
+  await check('joining the hub again while their channel is open -> back to it, no second channel', async () => {
+    await moveTo(samVoice, roomOf().id);
+    await moveTo(alexVoice, 'v-hub');
+    return madeChannels.length === 1 && alexVoice.voice.channelId === roomOf().id && !roomOf().deleted ? null : `${madeChannels.length} ${alexVoice.voice.channelId}`;
+  });
+  await check('🔒 Lock: only the owner; then every role loses Connect, but the people inside keep it', async () => {
+    const refused = await vcClick('lock', samVoice);
+    const locked = await vcClick('lock', alexVoice);
+    return refused.content.includes('Only the owner') && refused.flags === MessageFlags.Ephemeral && locked.content.includes('locked the channel') && locked.flags === undefined &&
+      vcHas('g1', 'deny', PermissionFlagsBits.Connect) && vcHas('r-gamer', 'deny', PermissionFlagsBits.Connect) && vcHas('r-gamer', 'deny', PermissionFlagsBits.MoveMembers) &&
+      vcHas('u-sam', 'allow', PermissionFlagsBits.Connect) && vcHas('u-alex', 'allow', PermissionFlagsBits.Connect) && vcHas('u-cardify', 'allow', PermissionFlagsBits.Connect)
+      ? null
+      : `${refused.content} | ${locked.content}`;
+  });
+  await check('🔓 Unlock -> back to the category\'s permissions plus the owner\'s', async () => {
+    const unlocked = await vcClick('unlock', alexVoice);
+    return unlocked.content.includes('unlocked') && !overwrite('g1') && !overwrite('u-sam') && !vcHas('r-gamer', 'deny', PermissionFlagsBits.Connect) && vcHas('u-alex', 'allow', PermissionFlagsBits.ManageChannels) ? null : unlocked.content;
+  });
+  await check('👑 Claim: not while the owner is there; after they leave, someone inside can (the channel stays)', async () => {
+    const early = await vcClick('claim', samVoice);
+    await moveTo(alexVoice, null);
+    const claimed = await vcClick('claim', samVoice);
+    return early.content.includes('still here') && !roomOf().deleted && claimed.content.includes('<@u-sam> is the new owner') && vcHas('u-sam', 'allow', PermissionFlagsBits.ManageChannels) && !overwrite('u-alex')
+      ? null
+      : `${early.content} | ${claimed?.content}`;
+  });
+  await check('the last person leaves -> the channel is deleted and forgotten', async () => {
+    const room = roomOf();
+    await moveTo(samVoice, null);
+    const status = answer(await run(command('join-to-create', 'status'))).content;
+    return room.deleted && !tempVoice.hubOf('g1', room.id) && status.includes("<#v-hub> → makes **🎮 {name}'s room** · up to 4 people") && status.includes('**Channels open right now:** none') ? null : status;
+  });
+  await check('they leave before I can move them -> the new channel is deleted again', async () => {
+    const quick = voiceMember('u-quick', 'Quick');
+    quick.voice.setChannel = async () => {
+      throw new Error('Target user is not connected to voice.');
+    };
+    await moveTo(quick, 'v-hub');
+    await moveTo(quick, null);
+    return madeChannels.length === 2 && madeChannels[1].deleted ? null : `${madeChannels.length} ${madeChannels[1]?.deleted}`;
+  });
+  await check('turned off -> joining the hub does nothing', async () => {
+    access.setEnabled('g1', 'tempvoice', false);
+    await moveTo(samVoice, 'v-hub');
+    await moveTo(samVoice, null);
+    access.setEnabled('g1', 'tempvoice', true);
+    return madeChannels.length === 2 ? null : `${madeChannels.length} channels`;
+  });
+  await check('/join-to-create remove -> the hub stops making channels, and stays', async () => {
+    const text = answer(await run(command('join-to-create', 'remove', { channel: hub }))).content;
+    await moveTo(samVoice, 'v-hub');
+    await moveTo(samVoice, null);
+    return text.includes("doesn't make voice channels anymore") && !hub.deleted && madeChannels.length === 2 && tempVoice.hubsIn('g1').length === 0 ? null : text;
+  });
+  await check('/join-to-create add with no channel -> I make "➕ Join to Create" in the picked category', async () => {
+    const text = answer(await run(command('join-to-create', 'add', { category: { id: 'cat1' } }))).content;
+    const made = madeChannels.at(-1);
+    return made.name === '➕ Join to Create' && made.options.parent === 'cat1' && tempVoice.hubsIn('g1').join() === made.id && text.includes(`<#${made.id}> is a Join to Create channel`) ? null : text;
+  });
+  guild.members.me = meBefore;
 
   console.log('\n----- /access -----');
   const asMember = (name, { roleIds = [], canManage = false, channelId = 'c1', channelObj } = {}) => {
@@ -1370,11 +1551,11 @@ function click(message, customId, member = alex) {
   await check('step 1: pick jobs -> saved right away, the checklist updates', async () => {
     const before = await shown('setup:go:jobs');
     const menu = walk(before.components).find((c) => c.custom_id === 'setup:set:jobs');
-    if (menu?.options.length !== 10 || menu.options.find((o) => o.value === 'music').default !== true) return JSON.stringify(menu);
+    if (menu?.options.length !== 11 || menu.options.find((o) => o.value === 'music').default !== true) return JSON.stringify(menu);
     const after = await shown('setup:set:jobs', ['links', 'roles', 'logs', 'welcome', 'leveling', 'music']);
     const text = textOf(after);
     const states = access.FEATURES.map((f) => `${f.key}:${access.isEnabled('g1', f.key) ? 1 : 0}`).join(' ');
-    return text.includes("✅ Saved! I'll do 6 jobs.") && text.includes('⬜ 🛡️ Moderation') && states === 'links:1 roles:1 expressions:0 alerts:0 moderation:0 automod:0 logs:1 welcome:1 leveling:1 music:1' ? null : `${states} ${text}`;
+    return text.includes("✅ Saved! I'll do 6 jobs.") && text.includes('⬜ 🛡️ Moderation') && states === 'links:1 roles:1 expressions:0 alerts:0 moderation:0 automod:0 logs:1 welcome:1 leveling:1 music:1 tempvoice:0' ? null : `${states} ${text}`;
   });
   await check('step 2: pick where I post -> mod log, welcome, goodbye and level-up channels saved', async () => {
     const page = await shown('setup:go:posting');
@@ -1408,11 +1589,21 @@ function click(message, customId, member = alex) {
       ? null
       : ids.join();
   });
-  await check('step 5: pick music rooms and volume -> saved', async () => {
+  await check('step 5: pick music rooms, where music commands work, volume and Join to Create channels -> saved', async () => {
     await shown('setup:set:voice', ['v1', 'v2']);
+    const anywhere = textOf(await shown('setup:set:musicchat', ['any']));
+    const offNow = music.musicSettings('g1').voiceChatOnly;
+    await shown('setup:set:musicchat', ['voice']);
     const after = await shown('setup:set:volume', ['75']);
+    access.setEnabled('g1', 'tempvoice', true);
+    const hubs = await shown('setup:set:hubs', ['v2']);
+    access.setEnabled('g1', 'tempvoice', false);
     const settings = music.musicSettings('g1');
-    return settings.voiceChannels.join() === 'v1,v2' && settings.volume === 75 && textOf(after).includes('Music starts at 75%') ? null : JSON.stringify(settings);
+    const ids = walk(hubs.components).map((c) => c.custom_id).filter(Boolean);
+    return settings.voiceChannels.join() === 'v1,v2' && settings.volume === 75 && textOf(after).includes('Music starts at 75%') && anywhere.includes('any text channel') && offNow === false && settings.voiceChatOnly &&
+      tempVoice.hubsIn('g1').join() === 'v2' && textOf(hubs).includes('Join to Create channels: <#v2>') && ids.includes('setup:set:musicchat') && ids.includes('setup:set:hubs')
+      ? null
+      : `${JSON.stringify(settings)} | ${tempVoice.hubsIn('g1')} | ${ids}`;
   });
   await check('the last page -> a summary of everything and what to try next', async () => {
     const text = textOf(await shown('setup:go:done'));

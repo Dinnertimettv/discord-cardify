@@ -23,6 +23,7 @@ const logs = require('./logs');
 const welcome = require('./welcome');
 const leveling = require('./leveling');
 const music = require('./music');
+const tempVoice = require('./tempvoice');
 const alerts = require('./alerts');
 
 const SETUP_COLOR = 0x57f287;
@@ -133,7 +134,8 @@ function postingLines(guild) {
   const channel = (id) => (id ? `<#${id}>` : null);
   const guildAlerts = alerts.alertsIn(guild.id);
   const alertChannels = [...new Set(guildAlerts.map((alert) => alert.channelId))].map((id) => `<#${id}>`);
-  const { voiceChannels } = music.musicSettings(guild.id);
+  const { voiceChannels, voiceChatOnly } = music.musicSettings(guild.id);
+  const hubs = tempVoice.hubsIn(guild.id);
   return [
     `🔗 **Link cards:** right where a link is shared${on('links') ? '' : off}`,
     `🎭 **Role panels:** where you make them with \`/roles create\`${on('roles') ? '' : off}`,
@@ -141,7 +143,8 @@ function postingLines(guild) {
     `📋 **Mod log:** ${channel(logs.logChannelId(guild.id)) ?? 'not set'}${on('logs') ? '' : off}`,
     `👋 **Welcome:** ${channel(welcome.channelFor(guild.id, 'welcome')) ?? 'not set'} · 🚪 **Goodbye:** ${channel(welcome.channelFor(guild.id, 'goodbye')) ?? 'not set'}${on('welcome') ? '' : off}`,
     `⭐ **Level-ups:** ${channel(leveling.announceChannel(guild.id)) ?? 'where the person is chatting'}${on('leveling') ? '' : off}`,
-    `🎵 **Music:** the "Now playing" card goes where someone uses \`/play\`; I join ${voiceChannels.length ? voiceChannels.map((id) => `<#${id}>`).join(', ') : 'any voice channel'}${on('music') ? '' : off}`,
+    `🎵 **Music:** the "Now playing" card goes ${voiceChatOnly ? "in the music's voice channel chat" : 'where someone uses `/play`'}; I join ${voiceChannels.length ? voiceChannels.map((id) => `<#${id}>`).join(', ') : 'any voice channel'}${on('music') ? '' : off}`,
+    `➕ **Join to Create:** ${hubs.length ? `${access.mentionChannels(hubs)} make new voice channels` : 'none yet - add one with `/join-to-create add`'}${on('tempvoice') ? '' : off}`,
   ];
 }
 
@@ -194,7 +197,9 @@ const STEP_OF_FIELD = {
   levelroles: 'people',
   linkroles: 'people',
   voice: 'music',
+  musicchat: 'music',
   volume: 'music',
+  hubs: 'music',
 };
 
 function stepControls(step, guild) {
@@ -265,17 +270,32 @@ function stepControls(step, guild) {
     if (on('music')) {
       const settings = music.musicSettings(id);
       ask(
-        '🔊 **Which voice channels can I play music in?** Pick nothing to allow all of them.',
+        '🔊 **Which voice channels can I play music in?** Pick nothing to allow all of them. *Picking a Join to Create channel counts for the channels it makes.*',
         channelMenu(guild, 'setup:set:voice', { placeholder: 'Any voice channel (pick some to limit it)...', types: [ChannelType.GuildVoice], max: 25, picked: settings.voiceChannels })
       );
+      const chat = new StringSelectMenuBuilder()
+        .setCustomId('setup:set:musicchat')
+        .setPlaceholder('Where do music commands work?')
+        .addOptions(
+          { label: "Only in the voice channel's chat", value: 'voice', emoji: '💬', description: 'Commands and the music card stay with the listeners (recommended)', default: settings.voiceChatOnly },
+          { label: 'In any text channel', value: 'any', emoji: '🌐', default: !settings.voiceChatOnly }
+        );
+      ask('💬 **Where can people use music commands?** Every voice channel has its own chat (the 💬 button).', row(chat));
       const volume = new StringSelectMenuBuilder()
         .setCustomId('setup:set:volume')
         .setPlaceholder('How loud?')
         .addOptions([25, 50, 60, 75, 100].map((percent) => ({ label: `${percent}%${percent === 60 ? ' (normal)' : ''}`, value: String(percent), emoji: percent <= 25 ? '🔈' : percent <= 60 ? '🔉' : '🔊', default: settings.volume === percent })));
       ask('🔉 **How loud should music start?** (People can still change it with `/music volume`.)', row(volume));
-    } else {
-      parts.push(text('🎵 Music is turned off, so there is nothing to pick here. Press **Next**!'));
     }
+    if (on('tempvoice')) {
+      ask(
+        '➕ **Join to Create** - when someone joins one of these, I make them their own voice channel. Pick nothing to turn it off. *Tip: make a brand-new one with `/join-to-create add`.*',
+        channelMenu(guild, 'setup:set:hubs', { placeholder: 'No Join to Create channels (pick some)...', types: [ChannelType.GuildVoice], max: 10, picked: tempVoice.hubsIn(id) })
+      );
+      const missing = tempVoice.missingPermissions(guild);
+      if (missing.length) parts.push(text(`⚠️ To make voice channels I need: **${missing.join(', ')}**.`));
+    }
+    if (parts.length === 0) parts.push(text('🎵 Music and ➕ Join to Create are turned off, so there is nothing to pick here. Press **Finish**!'));
   }
   return parts;
 }
@@ -291,13 +311,13 @@ const STEP_TEXT = {
     '2️⃣ **Pick where I post** - logs, welcomes and level-ups',
     '3️⃣ **Pick where I work** - channels to use, and channels to skip',
     '4️⃣ **Pick who can use what** - roles for music, levels and links',
-    '5️⃣ **Pick music rooms** - voice channels for music',
+    '5️⃣ **Pick voice channels** - for music, and Join to Create',
   ].join('\n'),
   jobs: '## 1️⃣ Pick my jobs\n-# Step 1 of 5',
   posting: '## 2️⃣ Pick where I post\n-# Step 2 of 5\nPick a channel for each one. To stop one, open its menu and take the channel off.',
   places: '## 3️⃣ Pick where I work\n-# Step 3 of 5',
   people: '## 4️⃣ Pick who can use what\n-# Step 4 of 5',
-  music: '## 5️⃣ Pick music rooms\n-# Step 5 of 5',
+  music: '## 5️⃣ Pick voice channels\n-# Step 5 of 5',
 };
 
 function doneText(guild) {
@@ -308,7 +328,8 @@ function doneText(guild) {
     on.some((f) => f.key === 'alerts') && '`/alerts twitch` - post when a streamer goes live',
     on.some((f) => f.key === 'welcome') && '`/welcome test` - see what new members will see',
     on.some((f) => f.key === 'automod') && '`/automod status` - turn on spam and bad-word blocking',
-    on.some((f) => f.key === 'music') && '`/radio` - play some music (join a voice channel first)',
+    on.some((f) => f.key === 'music') && "`/radio` - play some music (join a voice channel, then use it in that channel's chat)",
+    on.some((f) => f.key === 'tempvoice') && '`/join-to-create add` - a voice channel that makes a new voice channel for whoever joins',
     '`/help` - see everything I can do',
   ].filter(Boolean);
   return [
@@ -392,9 +413,15 @@ function applyPick(field, values, guild) {
     case 'voice':
       music.setMusicSettings(id, { voiceChannels: values });
       return `✅ Saved! I play music in: ${values.length ? list(values) : 'any voice channel'}.`;
+    case 'musicchat':
+      music.setMusicSettings(id, { voiceChatOnly: one !== 'any' });
+      return one === 'any' ? '✅ Saved! Music commands work in any text channel.' : "✅ Saved! Music commands only work in the voice channel's own chat.";
     case 'volume':
       music.setMusicSettings(id, { volume: Number(one) });
       return `✅ Saved! Music starts at ${one}%.`;
+    case 'hubs':
+      tempVoice.setHubs(id, values);
+      return `✅ Saved! Join to Create channels: ${list(tempVoice.hubsIn(id))}.`;
     default:
       return null;
   }

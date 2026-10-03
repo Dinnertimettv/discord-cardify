@@ -83,11 +83,20 @@ const GUIDES = {
   music: {
     about: 'I play music in voice channels. Search for any song, or paste a YouTube or Spotify link (songs, albums and playlists work too). I can also play radio stations, songs you upload, and the sound from X, TikTok, Instagram and Twitch clips.',
     start: [
-      'Join a voice channel.',
+      "Join a voice channel, then open its chat (the 💬 button on the channel). Music commands work in there!",
       'Type the name of a song: `/play song:never gonna give you up`',
       'Or paste a link: `/play song:<a YouTube or Spotify link>`',
       'Play a radio station: `/radio station:lofi`',
       'Use the buttons on the card to pause, skip or stop.',
+    ],
+  },
+  tempvoice: {
+    about: 'Join a special voice channel and I make you your very own voice channel, then move you into it. You can name it, lock it, and set how many people fit. When everyone leaves, it goes away by itself!',
+    start: [
+      'Make the special channel: `/join-to-create add`',
+      'Or use one you already have: `/join-to-create add channel:#Join to Create`',
+      'Join it - I make your own channel and move you in.',
+      'In your channel\'s chat, press 🔒 Lock, 🔓 Unlock or 👑 Claim.',
     ],
   },
   setup: {
