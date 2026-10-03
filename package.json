@@ -1,6 +1,6 @@
 {
   "name": "discord-cardify",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "description": "Spork - the only utensil your Discord server will ever need: link cards with playable video for X/Twitter, TikTok, Instagram, Twitch and YouTube, paywall-free news links, music, levels, role panels, alerts, moderation, welcome messages and Join to Create voice channels.",
   "main": "index.js",
   "license": "MIT",

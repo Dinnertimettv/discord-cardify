@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.4.0 - October 3, 2026
+
+### Changed
+
+**Cardify is now Spork** 🍴 - *the only utensil your server will ever need.*
+It does far more than link cards now, so it got a name to match: one tool
+that does the job of a whole drawer.
+- `/help`, `/setup`, `/access`, the README and the setup guide use the new
+  name.
+- The webhooks that repost links are named "Spork". Ones still named
+  "Cardify" (or after the bot's older name) are renamed and reused, so
+  no channel ends up with two.
+- Auto-mod rules are named "Spork · ...". Rules made as "Cardify · ..."
+  are still found, and get the new name the next time they change.
+
 ## 2.3.1 - October 3, 2026
 
 ### Fixed
