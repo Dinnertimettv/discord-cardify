@@ -35,6 +35,17 @@ Cardify grows from a link bot into an all-in-one server bot.
 - `/sound add` adds an MP3 or OGG file to the soundboard, with an optional
   emoji and volume.
 
+**Twitch and YouTube alerts** (`/alerts`, needs Manage Server)
+- `/alerts twitch` posts when a streamer goes live - a 🔴 Live card with a
+  snapshot of the stream, viewers, and a "Watch on Twitch" button.
+- `/alerts youtube` posts when a channel uploads (by link, @handle, or
+  channel ID) - a YouTube card with the Watch buttons.
+- Each alert can ping a role and use custom text (`{name}`, `{title}`);
+  `/alerts list` and `/alerts remove` manage them.
+- Checked every 2 minutes (Twitch) and 10 minutes (YouTube, from its
+  official feed). Adding an alert never posts a backlog, and only the
+  alert's own role (or an @everyone in its text) gets pinged.
+
 ### Permissions
 
 - **Manage Roles** (and Cardify's role above the roles it hands out) - for

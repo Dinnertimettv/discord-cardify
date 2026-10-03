@@ -9,7 +9,8 @@ const { saveFlaggedCard, getFlaggedCard, forgetFlaggedCard } = require('./flagge
 // Server features beyond fixing links, one file each in features/.
 const roles = require('./features/roles');
 const expressions = require('./features/expressions');
-const FEATURES = [roles, expressions];
+const alerts = require('./features/alerts');
+const FEATURES = [roles, expressions, alerts];
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -2466,6 +2467,19 @@ client.once(Events.ClientReady, async (readyClient) => {
       "Couldn't register the /embeds command (the bot may need re-inviting with the applications.commands scope):",
       err.message
     );
+  });
+  // Alerts reuse the Twitch and YouTube cards from this file.
+  alerts.init({
+    client,
+    isAllowedServer,
+    request,
+    decodeHtmlEntities,
+    fetchTwitch,
+    buildTwitchCard,
+    twitchUrl,
+    fetchYouTube,
+    buildYouTubeCard,
+    youtubeUrl,
   });
   if (LINK_ARCHIVE_CHANNEL_IDS.length > 0) await setUpArchiveChannels();
   else console.log('LINK_ARCHIVE_CHANNEL_IDS not set - link archiving is off.');

@@ -10,6 +10,7 @@ process.on('exit', () => fs.rmSync(process.env.BOT_DATA_DIR, { recursive: true, 
 const discord = require('discord.js');
 const roles = require('../features/roles');
 const expressions = require('../features/expressions');
+const alerts = require('../features/alerts');
 
 const { PermissionFlagsBits, PermissionsBitField, ComponentType, MessageFlags } = discord;
 let failures = 0;
@@ -99,6 +100,7 @@ function command(name, sub, options = {}, { canManage = true, permission } = {})
       getInteger: (n) => options[n] ?? null,
       getRole: (n) => (options[n] ? guild.roles.cache.get(options[n]) : null),
       getAttachment: (n) => options[n] ?? null,
+      getChannel: (n) => options[n] ?? null,
     },
     deferReply: async (o) => { interaction.deferred = true; log.push(['deferReply', o]); },
     reply: async (p) => { interaction.replied = true; log.push(['reply', p]); },
@@ -108,7 +110,7 @@ function command(name, sub, options = {}, { canManage = true, permission } = {})
 }
 const answer = (interaction) => interaction.log.findLast((l) => l[0] === 'reply' || l[0] === 'editReply')?.[1];
 const run = async (interaction) => {
-  for (const feature of [roles, expressions]) if (await feature.handleCommand(interaction)) return interaction;
+  for (const feature of [roles, expressions, alerts]) if (await feature.handleCommand(interaction)) return interaction;
   throw new Error(`no feature handled /${interaction.commandName}`);
 };
 
@@ -301,6 +303,118 @@ function click(message, customId, member = alex) {
       return answer(i).content.includes(expect) && sounds.length === 2 ? null : answer(i).content;
     });
   }
+
+  console.log('\n----- Twitch and YouTube alerts -----');
+  const twitchUsers = {
+    shroud: { login: 'shroud', displayName: 'shroud', stream: null },
+    pokimane: { login: 'pokimane', displayName: 'Pokimane', stream: { createdAt: '2026-10-01T10:00:00Z', title: 'already live' } },
+  };
+  const feeds = {
+    UCrick000000000000000000: [
+      { id: 'oldvideo001', title: 'Old one', published: Date.now() - 5 * 86400000 },
+      { id: 'oldvideo002', title: 'Older one', published: Date.now() - 9 * 86400000 },
+    ],
+  };
+  const feedXml = (id) =>
+    `<feed><author><name>Rick Astley</name></author>${feeds[id]
+      .map((v) => `<entry><yt:videoId>${v.id}</yt:videoId><title>${v.title}</title><link rel="alternate" href="https://www.youtube.com/${v.short ? 'shorts/' : 'watch?v='}${v.id}"/><published>${new Date(v.published).toISOString()}</published></entry>`)
+      .join('')}</feed>`;
+  const alertChannel = { id: 'c-alerts', sent: [], permissionsFor: () => ({ has: () => true }), send: async (p) => alertChannel.sent.push(json(p)) };
+  const lockedChannel = { id: 'c-locked', permissionsFor: () => ({ has: () => false }) };
+  guild.channels.cache = new Map([['c-alerts', alertChannel], ['c-locked', lockedChannel]]);
+  guild.members.me = {};
+  guild.roles.cache.set('r-notify', makeRole('r-notify', 'Notifications'));
+  alerts.setDependencies({
+    client: { channels: { fetch: async (id) => guild.channels.cache.get(id) } },
+    isAllowedServer: () => true,
+    decodeHtmlEntities: (s) => s.replace(/&amp;/g, '&'),
+    request: async (url) => {
+      if (url === 'https://www.youtube.com/@RickAstleyYT') {
+        return new Response('<link rel="canonical" href="https://www.youtube.com/channel/UCrick000000000000000000"><meta property="og:title" content="Rick Astley">');
+      }
+      const feedId = url.match(/channel_id=(\w+)/)?.[1];
+      if (feedId && feeds[feedId]) return new Response(feedXml(feedId));
+      return new Response('not found', { status: 404 });
+    },
+    fetchTwitch: async (kind, login) => {
+      if (!twitchUsers[login]) throw new Error('not found');
+      return structuredClone(twitchUsers[login]);
+    },
+    twitchUrl: (kind, login) => `https://www.twitch.tv/${login}`,
+    buildTwitchCard: (kind, user) => ({ toJSON: () => ({ type: ComponentType.Container, components: [{ type: ComponentType.TextDisplay, content: `[twitch card ${user.login} ${user.stream?.title}]` }] }) }),
+    youtubeUrl: (kind, id) => (kind === 'short' ? `https://www.youtube.com/shorts/${id}` : `https://www.youtube.com/watch?v=${id}`),
+    fetchYouTube: async (id) => ({ title: `Title of ${id}` }),
+    buildYouTubeCard: (video, link) => ({ toJSON: () => ({ type: ComponentType.Container, components: [{ type: ComponentType.TextDisplay, content: `[youtube card ${link.url}]` }] }) }),
+  });
+
+  await check('/alerts without Manage Server -> refused', async () => {
+    const i = await run(command('alerts', 'list', {}, { canManage: false }));
+    return answer(i).content.includes('Manage Server') ? null : answer(i).content;
+  });
+  await check('/alerts twitch for a streamer that does not exist -> says so', async () => {
+    const i = await run(command('alerts', 'twitch', { streamer: 'nobody_here_123', 'post-in': alertChannel }));
+    return answer(i).content.includes("can't find that Twitch streamer") ? null : answer(i).content;
+  });
+  await check("/alerts twitch into a channel the bot can't post in -> refused", async () => {
+    const i = await run(command('alerts', 'twitch', { streamer: 'shroud', 'post-in': lockedChannel }));
+    return answer(i).content.includes("I can't post in <#c-locked>") ? null : answer(i).content;
+  });
+  await check('/alerts twitch by channel link, pinging a role -> added', async () => {
+    const i = await run(command('alerts', 'twitch', { streamer: 'https://www.twitch.tv/Shroud', 'post-in': alertChannel, ping: 'r-notify' }));
+    return answer(i).content === "Added: I'll post in <#c-alerts> when **shroud** goes live." ? null : answer(i).content;
+  });
+  await check('streamer offline -> nothing posted; goes live -> card with the role ping; same stream again -> no repost', async () => {
+    await alerts.checkTwitch();
+    if (alertChannel.sent.length) return 'posted while offline';
+    twitchUsers.shroud.stream = { createdAt: '2026-10-03T12:00:00Z', title: 'ranked grind' };
+    await alerts.checkTwitch();
+    await alerts.checkTwitch();
+    const [sent] = alertChannel.sent;
+    if (alertChannel.sent.length !== 1) return `${alertChannel.sent.length} posts`;
+    if (textOf(sent) !== '🔴 **shroud** is live!\n<@&r-notify>\n[twitch card shroud ranked grind]') return textOf(sent);
+    const button = walk(sent.components).find((c) => c.type === ComponentType.Button);
+    return sent.allowedMentions.roles.join() === 'r-notify' && button?.url === 'https://www.twitch.tv/shroud' ? null : JSON.stringify(sent.allowedMentions);
+  });
+  await check('next stream -> a new alert', async () => {
+    twitchUsers.shroud.stream = { createdAt: '2026-10-04T12:00:00Z', title: 'day two' };
+    await alerts.checkTwitch();
+    return alertChannel.sent.length === 2 ? null : `${alertChannel.sent.length} posts`;
+  });
+  await check("adding a streamer who's live right now -> that stream isn't announced, the next one is", async () => {
+    const i = await run(command('alerts', 'twitch', { streamer: 'pokimane', 'post-in': alertChannel, message: '@everyone {name} is on: {title}' }));
+    await alerts.checkTwitch();
+    if (!answer(i).content.includes("they're live now") || alertChannel.sent.length !== 2) return answer(i).content;
+    twitchUsers.pokimane.stream = { createdAt: '2026-10-05T12:00:00Z', title: 'new stream' };
+    await alerts.checkTwitch();
+    const sent = alertChannel.sent[2];
+    return textOf(sent).startsWith('@everyone Pokimane is on: new stream') && sent.allowedMentions.parse.join() === 'everyone' ? null : textOf(sent);
+  });
+  await check('/alerts youtube by @handle -> found, existing uploads not announced', async () => {
+    const i = await run(command('alerts', 'youtube', { channel: 'https://www.youtube.com/@RickAstleyYT', 'post-in': alertChannel }));
+    await alerts.checkYouTube();
+    return answer(i).content === "Added: I'll post in <#c-alerts> when **Rick Astley** uploads." && alertChannel.sent.length === 3 ? null : answer(i).content;
+  });
+  await check('new upload -> announced with its card; a newly listed but old video -> skipped', async () => {
+    feeds.UCrick000000000000000000.unshift({ id: 'newvideo001', title: 'Never &amp; Again', published: Date.now() - 60000, short: true });
+    feeds.UCrick000000000000000000.push({ id: 'ancient0001', title: 'Ancient', published: Date.now() - 30 * 86400000 });
+    await alerts.checkYouTube();
+    await alerts.checkYouTube();
+    const sent = alertChannel.sent[3];
+    if (alertChannel.sent.length !== 4) return `${alertChannel.sent.length} posts`;
+    return textOf(sent) === '▶️ **Rick Astley** posted a new video: **Title of newvideo001**\n[youtube card https://www.youtube.com/shorts/newvideo001]' ? null : textOf(sent);
+  });
+  await check('/alerts list -> numbered, with platform, name, channel and ping', async () => {
+    const text = answer(await run(command('alerts', 'list'))).content;
+    return text.includes('**1.** 🔴 Twitch - **shroud** → <#c-alerts> (pings <@&r-notify>)') && text.includes('**3.** ▶️ YouTube - **Rick Astley** → <#c-alerts>') ? null : text;
+  });
+  await check('/alerts remove 1 -> that alert stops', async () => {
+    const i = await run(command('alerts', 'remove', { number: 1 }));
+    twitchUsers.shroud.stream = { createdAt: '2026-10-06T12:00:00Z', title: 'after removal' };
+    await alerts.checkTwitch();
+    return answer(i).content.includes('Stopped the Twitch alert for **shroud**') && alertChannel.sent.length === 4 ? null : answer(i).content;
+  });
+  await check('Twitch names from links are cleaned up', async () =>
+    ([alerts.twitchLoginFrom('https://twitch.tv/Name_1/videos'), alerts.twitchLoginFrom('name_1'), alerts.twitchLoginFrom('bad name')].join() === 'name_1,name_1,' ? null : 'wrong'));
 
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL FEATURE TESTS PASSED');
   process.exit(failures ? 1 : 0);
