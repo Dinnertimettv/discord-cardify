@@ -40,7 +40,7 @@ const MAX_VOLUME = 150;
 const IDLE_LEAVE_MS = 3 * 60_000;
 const ALONE_LEAVE_MS = 2 * 60_000;
 const RADIO_API = 'https://de1.api.radio-browser.info/json';
-const USER_AGENT = 'Cardify Discord bot';
+const USER_AGENT = 'Spork Discord bot';
 const AUDIO_EXTENSIONS = /\.(mp3|ogg|oga|opus|wav|flac|m4a|aac|webm|mp4|mov|mkv)$/i;
 const YOUTUBE_HOSTS = /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/i;
 const SPOTIFY_HOSTS = /(^|\.)(spotify\.com|spotify\.link)$/i;
@@ -490,7 +490,7 @@ function stationLabel(station) {
 }
 
 // ---------------------------------------------------------------------------
-// Sessions: one per server while Cardify is in a voice channel
+// Sessions: one per server while Spork is in a voice channel
 // ---------------------------------------------------------------------------
 
 const sessions = new Map();

@@ -1,7 +1,7 @@
 {
   "name": "discord-cardify",
   "version": "2.3.1",
-  "description": "Discord Cardify - a Discord bot that turns X/Twitter, TikTok, Instagram, Twitch, and YouTube links into clean cards with playable video, and paywalled news links into readable ones.",
+  "description": "Spork - the only utensil your Discord server will ever need: link cards with playable video for X/Twitter, TikTok, Instagram, Twitch and YouTube, paywall-free news links, music, levels, role panels, alerts, moderation, welcome messages and Join to Create voice channels.",
   "main": "index.js",
   "license": "MIT",
   "type": "commonjs",

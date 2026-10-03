@@ -125,7 +125,7 @@ function canPost(guild, channelId) {
 }
 
 // ---------------------------------------------------------------------------
-// Where Cardify posts - shown at the end of /setup and in /access view
+// Where Spork posts - shown at the end of /setup and in /access view
 // ---------------------------------------------------------------------------
 
 function postingLines(guild) {
@@ -302,7 +302,7 @@ function stepControls(step, guild) {
 
 const STEP_TEXT = {
   start: [
-    "## 👋 Hi! Let's set up Cardify",
+    "## 👋 Hi! Let's set up Spork",
     'I will ask you a few easy questions. It takes about 2 minutes.',
     'Everything you pick is saved right away, and you can change it any time.',
     '',

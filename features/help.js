@@ -1,4 +1,4 @@
-// /help and !help: what Cardify can do, in plain words. A home page, a page
+// /help and !help: what Spork can do, in plain words. A home page, a page
 // per feature (what it is, how to start, its commands), and a page per
 // command with every option. Command details come from the commands
 // themselves, so they never go out of date.
@@ -161,8 +161,8 @@ function homeText(guildId) {
     return `${topic.emoji} **${topic.name}** - ${topic.short}${off ? ' *(turned off here)*' : ''}`;
   });
   return [
-    "## 👋 Hi! I'm Cardify",
-    "I'm a helper bot for this server. Here's what I can do:",
+    "## 👋 Hi! I'm Spork 🍴",
+    "**The only utensil your server will ever need.** I'm one bot that does the job of a whole drawer full. Here's what I can do:",
     '',
     ...lines,
     '',
@@ -189,7 +189,7 @@ function topicText(topic, guildId) {
 function commandText(name, guildId) {
   const command = commandsByName.get(name);
   const topic = TOPICS.find((t) => t.commands.includes(name));
-  const lines = [`## ${topic?.emoji ?? '❔'} /${name}`, command.description, `-# ${whoCanUse(command)} · part of ${topic ? `${topic.emoji} ${topic.name}` : 'Cardify'}`, ''];
+  const lines = [`## ${topic?.emoji ?? '❔'} /${name}`, command.description, `-# ${whoCanUse(command)} · part of ${topic ? `${topic.emoji} ${topic.name}` : 'Spork'}`, ''];
   const describe = (options = []) =>
     options
       .filter((o) => o.type !== 1 && o.type !== 2)

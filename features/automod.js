@@ -1,8 +1,8 @@
 // Auto-mod, built on Discord's own AutoMod: /automod sets up rules that block
 // words, invite links, spam, mass mentions, and profanity. Discord enforces
-// them itself - instantly, and even while Cardify is offline - and each rule
+// them itself - instantly, and even while Spork is offline - and each rule
 // also reports to the mod log when /logs is set. The rules are named
-// "Cardify · ..." and show up in Server Settings → AutoMod.
+// "Spork · ..." and show up in Server Settings → AutoMod.
 const {
   AutoModerationActionType,
   AutoModerationRuleEventType,
@@ -17,12 +17,17 @@ const {
 const logs = require('./logs');
 
 const RULES = {
-  words: 'Cardify · Blocked words',
-  invites: 'Cardify · Invite links',
-  spam: 'Cardify · Spam',
-  mentions: 'Cardify · Mass mentions',
-  profanity: 'Cardify · Profanity & slurs',
+  words: 'Blocked words',
+  invites: 'Invite links',
+  spam: 'Spam',
+  mentions: 'Mass mentions',
+  profanity: 'Profanity & slurs',
 };
+const RULE_PREFIX = 'Spork · ';
+// Rules made under the bot's old name are still found, and renamed when changed.
+const OLD_PREFIXES = ['Cardify · '];
+const ruleName = (key) => `${RULE_PREFIX}${RULES[key]}`;
+const isRule = (rule, key) => [RULE_PREFIX, ...OLD_PREFIXES].some((prefix) => rule.name === `${prefix}${RULES[key]}`);
 // Discord's limit for one keyword in a filter.
 const MAX_WORD_LENGTH = 60;
 const INVITE_PATTERN = 'discord(?:\\.gg|(?:app)?\\.com/invite)/[a-zA-Z0-9-]+';
@@ -60,15 +65,15 @@ const AUTOMOD_COMMAND = new SlashCommandBuilder()
   .addSubcommand((s) =>
     s.setName('profanity').setDescription("Block profanity, slurs and sexual content (Discord's lists)").addBooleanOption(onOff)
   )
-  .addSubcommand((s) => s.setName('status').setDescription("See which of Cardify's auto-mod rules are on"));
+  .addSubcommand((s) => s.setName('status').setDescription("See which of Spork's auto-mod rules are on"));
 
 function reply(interaction, content) {
   return interaction.editReply({ content, allowedMentions: { parse: [] } });
 }
 
-async function findRule(guild, name) {
+async function findRule(guild, key) {
   const rules = await guild.autoModerationRules.fetch();
-  return rules.find((rule) => rule.name === name) ?? null;
+  return rules.find((rule) => isRule(rule, key)) ?? null;
 }
 
 // Block the message, and report it in the mod log when there is one.
@@ -79,11 +84,12 @@ function ruleActions(guildId, customMessage) {
   return actions;
 }
 
-// Creates the rule, or updates it if Cardify made it before.
+// Creates the rule, or updates it if Spork made it before.
 async function saveRule(interaction, key, { triggerType, triggerMetadata, message, enabled = true }) {
-  const name = RULES[key];
-  const existing = await findRule(interaction.guild, name);
+  const name = ruleName(key);
+  const existing = await findRule(interaction.guild, key);
   const changes = {
+    name,
     triggerMetadata,
     actions: ruleActions(interaction.guildId, message),
     enabled,
@@ -91,7 +97,6 @@ async function saveRule(interaction, key, { triggerType, triggerMetadata, messag
   };
   if (existing) return existing.edit(changes);
   return interaction.guild.autoModerationRules.create({
-    name,
     eventType: AutoModerationRuleEventType.MessageSend,
     triggerType,
     ...changes,
@@ -99,7 +104,7 @@ async function saveRule(interaction, key, { triggerType, triggerMetadata, messag
 }
 
 async function turnOff(interaction, key) {
-  const existing = await findRule(interaction.guild, RULES[key]);
+  const existing = await findRule(interaction.guild, key);
   if (existing?.enabled) await existing.edit({ enabled: false, reason: `Turned off by ${interaction.user.tag} with /automod` });
 }
 
@@ -112,7 +117,7 @@ const SUBCOMMANDS = {
     const words = parseWords(interaction.options.getString('words', true));
     const tooLong = words.find((word) => word.length > MAX_WORD_LENGTH);
     if (tooLong) return reply(interaction, `"${tooLong}" is too long - Discord allows at most ${MAX_WORD_LENGTH} characters per word.`);
-    const existing = await findRule(interaction.guild, RULES.words);
+    const existing = await findRule(interaction.guild, 'words');
     const list = [...new Set([...(existing?.triggerMetadata.keywordFilter ?? []), ...words])];
     await saveRule(interaction, 'words', {
       triggerType: AutoModerationRuleTriggerType.Keyword,
@@ -124,19 +129,19 @@ const SUBCOMMANDS = {
 
   async 'words-remove'(interaction) {
     const words = parseWords(interaction.options.getString('words', true));
-    const existing = await findRule(interaction.guild, RULES.words);
+    const existing = await findRule(interaction.guild, 'words');
     if (!existing) return reply(interaction, 'No words are blocked yet.');
     const list = existing.triggerMetadata.keywordFilter.filter((word) => !words.includes(word));
     if (list.length === 0) {
       await turnOff(interaction, 'words');
       return reply(interaction, 'No words are blocked anymore - the word filter is off.');
     }
-    await existing.edit({ triggerMetadata: { keywordFilter: list }, reason: `Changed by ${interaction.user.tag} with /automod` });
+    await existing.edit({ name: ruleName('words'), triggerMetadata: { keywordFilter: list }, reason: `Changed by ${interaction.user.tag} with /automod` });
     return reply(interaction, `Blocking ${list.length} word(s) now.`);
   },
 
   async 'words-list'(interaction) {
-    const existing = await findRule(interaction.guild, RULES.words);
+    const existing = await findRule(interaction.guild, 'words');
     const list = existing?.enabled ? existing.triggerMetadata.keywordFilter : [];
     if (list.length === 0) return reply(interaction, 'No words are blocked.');
     return reply(interaction, `Blocked (${list.length}): ${list.map((word) => `||${word}||`).join(', ')}`.slice(0, 2000));
@@ -203,11 +208,11 @@ const SUBCOMMANDS = {
 
   async status(interaction) {
     const rules = await interaction.guild.autoModerationRules.fetch();
-    const lines = Object.entries(RULES).map(([key, name]) => {
-      const rule = rules.find((r) => r.name === name);
+    const lines = Object.entries(RULES).map(([key, label]) => {
+      const rule = rules.find((r) => isRule(r, key));
       const detail =
         key === 'words' && rule ? ` (${rule.triggerMetadata.keywordFilter.length} words)` : key === 'mentions' && rule ? ` (max ${rule.triggerMetadata.mentionTotalLimit})` : '';
-      return `${rule?.enabled ? '🟢' : '⚫'} **${name.replace('Cardify · ', '')}**${rule?.enabled ? detail : ' - off'}`;
+      return `${rule?.enabled ? '🟢' : '⚫'} **${label}**${rule?.enabled ? detail : ' - off'}`;
     });
     const logChannel = logs.logChannelId(interaction.guildId);
     lines.push(`-# Blocked messages are reported in ${logChannel ? `<#${logChannel}>` : 'the mod log, once you set one with `/logs set`'}. Mods and admins aren't affected.`);

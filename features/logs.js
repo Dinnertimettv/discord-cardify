@@ -1,4 +1,4 @@
-// The mod log: a channel (set with /logs) where Cardify reports deleted and
+// The mod log: a channel (set with /logs) where Spork reports deleted and
 // edited messages, bans and unbans, members joining and leaving (when the
 // Server Members intent is on), and every /mod action. Saved in data/logs.json.
 const {
@@ -41,7 +41,7 @@ const LOGS_COMMAND = new SlashCommandBuilder()
   .addSubcommand((sub) => sub.setName('off').setDescription('Stop the mod log'));
 
 let client = null;
-// Messages Cardify deletes itself (link reposts, /mod purge) - not news for the log.
+// Messages Spork deletes itself (link reposts, /mod purge) - not news for the log.
 const ownDeletions = new Set();
 
 function init(discordClient) {

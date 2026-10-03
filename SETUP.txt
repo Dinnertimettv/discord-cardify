@@ -49,7 +49,7 @@ Node.js is a free program the bot needs to run.
      and log in with your Discord account.
 
   2. Click "New Application" (top right).
-     Give it a name, for example:  Cardify
+     Give it a name, for example:  Spork
      (Discord doesn't allow the word "discord" in a bot's name.)
      Tick the box to agree, then click "Create".
 
@@ -180,7 +180,7 @@ that's normal until Part 5).
 
   3. Wait until you see a line like:
 
-             Logged in as Cardify#1234 - version 2.0.0
+             Logged in as Spork#1234 - version 2.0.0
 
      (with your bot's name and number)
 

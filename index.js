@@ -188,7 +188,7 @@ const REPLY_THREAD_NAME = /^(?:Top (?:replies|comments)|Thread) \(/;
 // The most posts "Show thread" posts; longer threads end with a link to the rest.
 const MAX_THREAD_POSTS = 20;
 
-const BOT_USER_AGENT = `DiscordCardify/${BOT_VERSION} (Discord link-preview bot)`;
+const BOT_USER_AGENT = `Spork/${BOT_VERSION} (Discord link-preview bot)`;
 // News sites and archive.ph treat obvious bots differently, so use a browser UA there.
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
@@ -1537,7 +1537,9 @@ const channelWebhooks = new Map(); // channel id -> Promise<Webhook>
 // The name of the bot's own posting webhook in each channel. (Each repost
 // still shows the sharer's name - this is only what the channel's
 // Integrations list shows.)
-const WEBHOOK_NAME = 'Cardify';
+const WEBHOOK_NAME = 'Spork';
+// What the bot's webhooks were called before - reused and renamed, not duplicated.
+const OLD_WEBHOOK_NAMES = ['Cardify', 'Dinner News Station'];
 
 // The bot's own webhook in a channel - created on first use, reused after -
 // for posting under the sharer's name. Threads use their parent channel's.
@@ -1553,15 +1555,16 @@ async function getChannelWebhook(channel) {
       // Only a webhook made for this, named WEBHOOK_NAME - never the test
       // webhook: the bot handles that one's posts, so reposting through it
       // would make the bot pick up its own reposts. Older versions named the
-      // webhook after the bot; one of those is renamed and reused, so
-      // renaming the bot doesn't leave a stray webhook in every channel.
+      // webhook after the bot, or used an older name; one of those is renamed
+      // and reused, so renaming the bot doesn't leave a stray webhook in
+      // every channel.
       const hooks = (await target.fetchWebhooks()).filter(
         (hook) => hook.owner?.id === client.user.id && hook.token && hook.id !== TEST_WEBHOOK_ID
       );
       const existing = hooks.find((hook) => hook.name === WEBHOOK_NAME);
       if (existing) return existing;
-      const older = hooks.find((hook) => hook.name === client.user.username);
-      if (older) return older.edit({ name: WEBHOOK_NAME, reason: 'Renamed for Discord Cardify' }).catch(() => older);
+      const older = hooks.find((hook) => hook.name === client.user.username || OLD_WEBHOOK_NAMES.includes(hook.name));
+      if (older) return older.edit({ name: WEBHOOK_NAME, reason: 'Renamed for Spork' }).catch(() => older);
       return target.createWebhook({
         name: WEBHOOK_NAME,
         avatar: client.user.displayAvatarURL(),

@@ -1,20 +1,23 @@
-# Discord Cardify
+# Spork 🍴
+
+**The only utensil your server will ever need.**
 
 <a href="https://buymeacoffee.com/dinnertime"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="40"></a>
 
 X's own link previews on Discord are usually broken (no image, no video, blank
 card), TikTok and Instagram links don't preview at all, and paywalled news
-links just hit a subscription wall. **Discord Cardify** watches for X/Twitter,
+links just hit a subscription wall. **Spork** watches for X/Twitter,
 TikTok, Instagram, Twitch, YouTube, and paywalled-news links and replaces the
 original message with a clean card — full image galleries, playable video,
 stats, and paywall-free articles included.
 
 It also covers what servers usually need several bots for: role panels,
 Twitch and YouTube alerts, moderation and auto-mod, a mod log, welcome
-messages, leveling, and a music player - see [Server features](#server-features).
+messages, leveling, Join to Create voice channels, and a music player - see
+[Server features](#server-features). Like a spork, it's one tool that does
+the job of a whole drawer.
 
-(Discord doesn't allow "discord" in a bot's username, so in Discord the bot
-goes by **Cardify**.)
+(Spork used to be called Discord Cardify, back when it only made link cards.)
 
 **Setting it up for the first time? Start with [SETUP.txt](SETUP.txt)** - a
 simple step-by-step guide to setting up and running the bot, no coding
@@ -350,5 +353,5 @@ Set in `.env`:
 [MIT](LICENSE) - free to use, change, and share, as long as the copyright
 notice stays with it.
 
-If Discord Cardify makes your server better, you can
+If Spork makes your server better, you can
 [buy me a coffee](https://buymeacoffee.com/dinnertime) ☕ - thank you!

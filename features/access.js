@@ -1,7 +1,7 @@
 // Who can use what, and where. Admins change it with /access or /setup:
 // - turn whole features on or off
 // - let only some roles, or only some channels, use a feature or one command
-// - make Cardify ignore a channel completely
+// - make Spork ignore a channel completely
 // Admins (Manage Server) skip role limits so they can't lock themselves out,
 // and /help, /setup and /access always work. Saved in data/access.json.
 const { PermissionFlagsBits } = require('discord.js');
@@ -78,9 +78,9 @@ function allRules(guildId) {
   return Object.entries(store.load().guilds[guildId]?.rules ?? {});
 }
 
-// "feature:music" -> "🎵 Music", "command:play" -> "/play", "all" -> "all of Cardify"
+// "feature:music" -> "🎵 Music", "command:play" -> "/play", "all" -> "all of Spork"
 function targetLabel(target) {
-  if (target === 'all') return 'all of Cardify';
+  if (target === 'all') return 'all of Spork';
   const [kind, name] = target.split(':');
   if (kind === 'feature') {
     const feature = featureByKey.get(name);
@@ -105,7 +105,7 @@ function parseTarget(text) {
 // Every target, for autocomplete: [{ name, value }]
 function targetChoices() {
   return [
-    { name: '🌐 Everything (all of Cardify)', value: 'all' },
+    { name: '🌐 Everything (all of Spork)', value: 'all' },
     ...FEATURES.flatMap((feature) => [
       { name: `${feature.emoji} ${feature.name} (all of its commands)`, value: `feature:${feature.key}` },
       ...feature.commands.map((command) => ({ name: `   /${command}`, value: `command:${command}` })),

@@ -24,7 +24,7 @@ function ensure() {
   if (fs.existsSync(BINARY)) return Promise.resolve(BINARY);
   downloading ??= (async () => {
     console.log(`Downloading yt-dlp (${ASSET}) from GitHub for the music player...`);
-    const res = await fetch(DOWNLOAD_URL, { headers: { 'User-Agent': 'Cardify Discord bot' }, signal: AbortSignal.timeout(120_000) });
+    const res = await fetch(DOWNLOAD_URL, { headers: { 'User-Agent': 'Spork Discord bot' }, signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`yt-dlp download failed: HTTP ${res.status}`);
     fs.mkdirSync(BIN_DIR, { recursive: true });
     const tmp = `${BINARY}.download`;

@@ -58,7 +58,7 @@ for (const role of [
   makeRole('r-admin', 'Admin', { permissions: PermissionFlagsBits.Administrator }),
   makeRole('r-voice', 'Voice Mover', { permissions: PermissionFlagsBits.MoveMembers }),
   makeRole('r-bot', 'SomeBot', { managed: true }),
-  makeRole('r-high', 'Above Cardify', { editable: false }),
+  makeRole('r-high', 'Above Spork', { editable: false }),
 ]) guild.roles.cache.set(role.id, role);
 
 function makeMember(id) {
@@ -455,7 +455,7 @@ function click(message, customId, member = alex) {
     await logs.messageDeleted(sentMessage('m1', 'oops wrong channel'));
     return lastLog().startsWith('🗑️ **Message deleted** in <#c1> · sent by <@u-alex>\n> oops wrong channel') ? null : lastLog();
   });
-  await check("messages Cardify deletes itself (link reposts), bots' messages, and unknown old messages -> not logged", async () => {
+  await check("messages Spork deletes itself (link reposts), bots' messages, and unknown old messages -> not logged", async () => {
     const before = modLog.sent.length;
     logs.ignoreDeletion('m2');
     await logs.messageDeleted(sentMessage('m2', 'https://x.com/a/status/1'));
@@ -523,8 +523,8 @@ function click(message, customId, member = alex) {
     ['on someone with a higher role', 'kick', { member: makeTarget('u-boss', 'boss', { rolePosition: 9 }) }, {}, 'same or a higher role than you'],
     ['on the server owner', 'ban', { member: makeTarget('u-owner', 'owner') }, {}, 'Nobody can ban the server owner'],
     ['on yourself', 'timeout', { member: makeTarget('u-admin', 'me'), duration: '60s' }, {}, "You can't time out yourself"],
-    ['on Cardify', 'kick', { member: makeTarget('u-cardify', 'cardify') }, {}, "I can't kick myself"],
-    ['when Cardify\'s role is too low', 'kick', { member: { ...makeTarget('u-x', 'x'), kickable: false, get member() { return this; } } }, {}, 'my role needs to be above theirs'],
+    ['on Spork', 'kick', { member: makeTarget('u-cardify', 'cardify') }, {}, "I can't kick myself"],
+    ['when Spork\'s role is too low', 'kick', { member: { ...makeTarget('u-x', 'x'), kickable: false, get member() { return this; } } }, {}, 'my role needs to be above theirs'],
     ['untimeout on someone not timed out', 'untimeout', { member: makeTarget('u-y', 'y') }, {}, "isn't timed out"],
     ['unban on someone not banned', 'unban', { member: { id: 'u-nobody' } }, {}, "isn't banned"],
   ]) {
@@ -582,7 +582,7 @@ function click(message, customId, member = alex) {
   const ruleNamed = (name) => [...rules.values()].find((r) => r.name === name);
   await check('/automod words-add -> a Discord AutoMod keyword rule that blocks and reports to the mod log', async () => {
     const i = await run(command('automod', 'words-add', { words: 'Badword, *slur*, badword' }));
-    const rule = ruleNamed('Cardify · Blocked words');
+    const rule = ruleNamed('Spork · Blocked words');
     if (answer(i).content !== 'Blocking 2 word(s) now.') return answer(i).content;
     if (rule.triggerType !== 1 || rule.eventType !== 1 || rule.triggerMetadata.keywordFilter.join() !== 'badword,*slur*') return JSON.stringify(rule);
     return rule.actions.map((a) => `${a.type}:${a.metadata.channel ?? a.metadata.customMessage}`).join() === "1:That message was blocked by this server's word filter.,2:c-modlog" ? null : JSON.stringify(rule.actions);
@@ -590,7 +590,7 @@ function click(message, customId, member = alex) {
   await check('/automod words-add again -> same rule, words merged; words-remove -> removed', async () => {
     await run(command('automod', 'words-add', { words: 'third' }));
     await run(command('automod', 'words-remove', { words: 'badword' }));
-    const rule = ruleNamed('Cardify · Blocked words');
+    const rule = ruleNamed('Spork · Blocked words');
     return rules.size === 1 && rule.triggerMetadata.keywordFilter.join() === '*slur*,third' ? null : JSON.stringify(rule.triggerMetadata);
   });
   await check('/automod words-list -> spoilered list', async () => {
@@ -602,21 +602,29 @@ function click(message, customId, member = alex) {
     await run(command('automod', 'spam', { on: true }));
     await run(command('automod', 'mentions', { limit: 5 }));
     await run(command('automod', 'profanity', { on: true }));
-    const invites = ruleNamed('Cardify · Invite links');
-    const mentions = ruleNamed('Cardify · Mass mentions');
-    const profanity = ruleNamed('Cardify · Profanity & slurs');
+    const invites = ruleNamed('Spork · Invite links');
+    const mentions = ruleNamed('Spork · Mass mentions');
+    const profanity = ruleNamed('Spork · Profanity & slurs');
     if (!invites.triggerMetadata.regexPatterns[0].startsWith('discord(?:')) return JSON.stringify(invites.triggerMetadata);
-    if (ruleNamed('Cardify · Spam').triggerType !== 3 || mentions.triggerType !== 5 || mentions.triggerMetadata.mentionTotalLimit !== 5) return 'spam/mentions wrong';
+    if (ruleNamed('Spork · Spam').triggerType !== 3 || mentions.triggerType !== 5 || mentions.triggerMetadata.mentionTotalLimit !== 5) return 'spam/mentions wrong';
     return profanity.triggerType === 4 && profanity.triggerMetadata.presets.join() === '1,3,2' ? null : JSON.stringify(profanity.triggerMetadata);
   });
   await check('/automod spam off -> the rule is disabled, not deleted', async () => {
     await run(command('automod', 'spam', { on: false }));
-    const spam = ruleNamed('Cardify · Spam');
+    const spam = ruleNamed('Spork · Spam');
     return spam && spam.enabled === false ? null : JSON.stringify(spam);
   });
   await check('/automod status -> each rule on or off', async () => {
     const text = answer(await run(command('automod', 'status'))).content;
     return text.includes('🟢 **Blocked words** (2 words)') && text.includes('⚫ **Spam** - off') && text.includes('🟢 **Mass mentions** (max 5)') && text.includes('<#c-modlog>') ? null : text;
+  });
+  await check('a rule made under the old name ("Cardify · ...") -> still counted, and renamed "Spork · ..." when changed, not duplicated', async () => {
+    const invites = ruleNamed('Spork · Invite links');
+    invites.name = 'Cardify · Invite links';
+    const before = rules.size;
+    const status = answer(await run(command('automod', 'status'))).content;
+    await run(command('automod', 'invites', { on: true }));
+    return status.includes('🟢 **Invite links**') && invites.name === 'Spork · Invite links' && rules.size === before ? null : `${invites.name} ${rules.size}/${before} ${status}`;
   });
   await check("Discord refusing (missing permission) -> explained", async () => {
     const saved = guild.autoModerationRules.create;
@@ -1459,7 +1467,7 @@ function click(message, customId, member = alex) {
     const text = textOf(json(payload));
     const menu = walk(json(payload).components).find((c) => c.custom_id === 'help:topic');
     const buttons = walk(json(payload).components).filter((c) => c.type === ComponentType.Button).map((c) => c.custom_id).join();
-    return text.includes("## 👋 Hi! I'm Cardify") && help.TOPICS.every((t) => text.includes(t.name)) && menu?.options.length === help.TOPICS.length && buttons === 'setup:start,access:view' && payload.flags & MessageFlags.Ephemeral
+    return text.includes("## 👋 Hi! I'm Spork") && help.TOPICS.every((t) => text.includes(t.name)) && menu?.options.length === help.TOPICS.length && buttons === 'setup:start,access:view' && payload.flags & MessageFlags.Ephemeral
       ? null
       : `${buttons} ${text}`;
   });
@@ -1502,7 +1510,7 @@ function click(message, customId, member = alex) {
     const home = helpClick('help:home');
     await help.handleComponent(home);
     const details = textOf(json(pick.log[0][1]));
-    return details.includes('**/music loop**') && details.includes('This song') && textOf(json(home.log[0][1])).includes("I'm Cardify") ? null : details;
+    return details.includes('**/music loop**') && details.includes('This song') && textOf(json(home.log[0][1])).includes("I'm Spork") ? null : details;
   });
   await check('!help -> a public home page; picking a topic on it answers just you', async () => {
     const replies = [];
@@ -1554,7 +1562,7 @@ function click(message, customId, member = alex) {
   await check('/setup -> a private welcome page with the plan and a "Let\'s go!" button', async () => {
     const payload = answer(await run(command('setup', null)));
     const text = textOf(json(payload));
-    return text.includes("## 👋 Hi! Let's set up Cardify") && text.includes('5️⃣') && buttonIds(json(payload)).join() === 'setup:go:jobs' && payload.flags & MessageFlags.Ephemeral ? null : text;
+    return text.includes("## 👋 Hi! Let's set up Spork") && text.includes('5️⃣') && buttonIds(json(payload)).join() === 'setup:go:jobs' && payload.flags & MessageFlags.Ephemeral ? null : text;
   });
   await check('step 1: pick jobs -> saved right away, the checklist updates', async () => {
     const before = await shown('setup:go:jobs');

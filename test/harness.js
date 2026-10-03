@@ -838,18 +838,25 @@ async function click(label, customId, sent, opts, check) {
   await run('in a thread -> the parent channel\'s webhook, posted into the thread', 'https://x.com/jack/status/20', { channelId: 't5', parentId: 'c1', channelType: discord.ChannelType.PublicThread }, ([o]) =>
     o.viaWebhook && o.threadId === 't5' ? null : `threadId ${o.threadId}`);
   await run('one webhook per channel, reused - its own, never the test webhook', 'https://x.com/jack/status/20', {}, ([o]) => {
-    const own = fakeWebhooks.filter((w) => w.channelId === 'c1' && w.name === 'Cardify');
+    const own = fakeWebhooks.filter((w) => w.channelId === 'c1' && w.name === 'Spork');
     return own.length === 1 && o.viaWebhook ? null : `${own.length} own webhooks, viaWebhook=${o?.viaWebhook}`;
   });
-  // A webhook made by an older version, named after the bot: renamed to "Cardify" and reused, not duplicated.
-  const olderHook = { id: '777', channelId: 'c8', name: 'Old Bot Name', token: 'tok', owner: { id: 'bot-user' } };
-  olderHook.send = async (p) => { currentOut.push({ ...validate(p), viaWebhook: true, hook: olderHook.id }); return { url: 'https://discord.com/channels/g1/c8/webhook-post' }; };
-  olderHook.edit = async ({ name }) => { olderHook.name = name; return olderHook; };
-  fakeWebhooks.push(olderHook);
-  await run('older webhook named after the bot -> renamed "Cardify" and reused, no second webhook', 'https://x.com/jack/status/20', { channelId: 'c8' }, ([o]) => {
-    const inC8 = fakeWebhooks.filter((w) => w.channelId === 'c8');
-    return o?.hook === '777' && olderHook.name === 'Cardify' && inC8.length === 1 ? null : `hook ${o?.hook}, name ${olderHook.name}, ${inC8.length} webhooks`;
-  });
+  // A webhook made by an older version (named after the bot, or the bot's old
+  // name): renamed to "Spork" and reused, not duplicated.
+  const olderHook = (id, channelId, name) => {
+    const hook = { id, channelId, name, token: 'tok', owner: { id: 'bot-user' } };
+    hook.send = async (p) => { currentOut.push({ ...validate(p), viaWebhook: true, hook: hook.id }); return { url: `https://discord.com/channels/g1/${channelId}/webhook-post` }; };
+    hook.edit = async ({ name: renamed }) => { hook.name = renamed; return hook; };
+    fakeWebhooks.push(hook);
+    return hook;
+  };
+  for (const [id, channelId, name, label] of [['777', 'c8', 'Old Bot Name', 'named after the bot'], ['778', 'c9', 'Cardify', 'with the old name "Cardify"']]) {
+    const hook = olderHook(id, channelId, name);
+    await run(`older webhook ${label} -> renamed "Spork" and reused, no second webhook`, 'https://x.com/jack/status/20', { channelId }, ([o]) => {
+      const inChannel = fakeWebhooks.filter((w) => w.channelId === channelId);
+      return o?.hook === id && hook.name === 'Spork' && inChannel.length === 1 ? null : `hook ${o?.hook}, name ${hook.name}, ${inChannel.length} webhooks`;
+    });
+  }
   fakeWebhooks.forEach((w) => { w.broken = true; });
   await run('webhook deleted -> falls back to posting as the bot', 'https://x.com/jack/status/20', {}, ([o]) =>
     !o.viaWebhook && textOf(o.components).startsWith('<@111111111111111111> shared:') ? null : 'did not fall back');
@@ -1044,7 +1051,7 @@ async function click(label, customId, sent, opts, check) {
   // !help, quiet channels and switched-off features, through the real message handler.
   const access = require(path.join(BOT_DIR, 'features/access'));
   await run('!help -> the help card, as a reply', '!help', {}, (out) =>
-    out.length === 1 && out[0].isReply && out[0].isCard && out[0].components[0].components.some((c) => c.content?.includes("I'm Cardify")) ? null : 'no help card');
+    out.length === 1 && out[0].isReply && out[0].isCard && out[0].components[0].components.some((c) => c.content?.includes("I'm Spork")) ? null : 'no help card');
   access.setIgnored('g1', ['c-quiet']);
   await run('quiet channel -> links and !help left alone', 'https://www.tiktok.com/@q/video/10', { channelId: 'c-quiet' }, (out) => (out.length ? 'answered in a quiet channel' : null));
   await run('quiet channel -> !help ignored too', '!help', { channelId: 'c-quiet' }, (out) => (out.length ? 'answered in a quiet channel' : null));

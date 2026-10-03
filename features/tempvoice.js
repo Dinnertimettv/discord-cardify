@@ -1,4 +1,4 @@
-// Join to Create: join a special voice channel (a "hub") and Cardify makes you
+// Join to Create: join a special voice channel (a "hub") and Spork makes you
 // your own voice channel next to it and moves you in. It's deleted when
 // everyone leaves. The owner gets Manage Channels on it (rename it or set a
 // member limit with Discord's own Edit Channel) and buttons in its chat to
@@ -29,11 +29,11 @@ const DEFAULT_NAME = "🔊 {name}'s channel";
 // Joining a hub again this soon after making a channel does nothing, so
 // hopping in and out can't flood the server with channels.
 const COOLDOWN_MS = 5_000;
-// What Cardify needs to make channels, move people into them, and lock them.
+// What Spork needs to make channels, move people into them, and lock them.
 const BOT_PERMISSIONS = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.MoveMembers, PermissionFlagsBits.ManageRoles];
 // The owner can rename the channel, set a limit, and move or disconnect people in it.
 const OWNER_ALLOW = PermissionFlagsBits.ViewChannel | PermissionFlagsBits.Connect | PermissionFlagsBits.Speak | PermissionFlagsBits.ManageChannels | PermissionFlagsBits.MoveMembers;
-// Cardify itself always gets in (to move people, to play music, to clean up).
+// Spork itself always gets in (to move people, to play music, to clean up).
 const BOT_ALLOW = PermissionFlagsBits.ViewChannel | PermissionFlagsBits.Connect | PermissionFlagsBits.Speak | PermissionFlagsBits.ManageChannels | PermissionFlagsBits.MoveMembers;
 
 const nameOption = (o) => o.setName('name').setDescription("Name for the channels it makes - {name} is the member's name").setMaxLength(90);
@@ -88,7 +88,7 @@ function missingPermissions(guild) {
 }
 
 // The category's permissions (like a synced channel), the owner's and
-// Cardify's own. Locked: every role loses Connect, so only the owner and the
+// Spork's own. Locked: every role loses Connect, so only the owner and the
 // people inside right now can get in.
 function roomOverwrites(guild, parent, ownerId, { locked = false, insideIds = [] } = {}) {
   const botId = guild.members.me?.id;
@@ -219,7 +219,7 @@ function channelDeleted(channel) {
 }
 
 // At startup: forget what was deleted, delete channels that emptied while
-// Cardify was offline, and make channels for anyone already waiting in a hub.
+// Spork was offline, and make channels for anyone already waiting in a hub.
 async function init(client) {
   for (const [guildId, data] of Object.entries(store.load().guilds)) {
     const guild = client.guilds.cache.get(guildId);
