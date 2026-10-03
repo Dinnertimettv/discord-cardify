@@ -16,6 +16,7 @@ const moderation = require('../features/moderation');
 const automod = require('../features/automod');
 const welcome = require('../features/welcome');
 const leveling = require('../features/leveling');
+const music = require('../features/music');
 
 const { PermissionFlagsBits, PermissionsBitField, ComponentType, MessageFlags } = discord;
 let failures = 0;
@@ -112,12 +113,14 @@ function command(name, sub, options = {}, { canManage = true, permission } = {})
     deferReply: async (o) => { interaction.deferred = true; log.push(['deferReply', o]); },
     reply: async (p) => { interaction.replied = true; log.push(['reply', p]); },
     editReply: async (p) => { log.push(['editReply', p]); },
+    deleteReply: async () => { log.push(['deleteReply']); },
+    followUp: async (p) => { log.push(['followUp', p]); },
   };
   return interaction;
 }
-const answer = (interaction) => interaction.log.findLast((l) => l[0] === 'reply' || l[0] === 'editReply')?.[1];
+const answer = (interaction) => interaction.log.findLast((l) => ['reply', 'editReply', 'followUp'].includes(l[0]))?.[1];
 const run = async (interaction) => {
-  for (const feature of [roles, expressions, alerts, logs, moderation, automod, welcome, leveling]) if (await feature.handleCommand(interaction)) return interaction;
+  for (const feature of [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music]) if (await feature.handleCommand(interaction)) return interaction;
   throw new Error(`no feature handled /${interaction.commandName}`);
 };
 
@@ -747,6 +750,258 @@ function click(message, customId, member = alex) {
     await run(command('levels', 'reset', { member: { id: 'u-chatter' } }));
     const text = answer(await run(command('levels', 'status'))).content;
     return text.includes('**Leveling:** on') && text.includes('<#c-levels>') && text.includes('level 2 → <@&r-artist>') && text.includes('**Members with XP:** 2') ? null : text;
+  });
+
+  console.log('\n----- music -----');
+  // A fake voice engine: connections, a player and audio that "play" instantly.
+  const { EventEmitter } = require('events');
+  const joins = [];
+  const players = [];
+  music.engine.join = (vc) => {
+    joins.push(vc.id);
+    const connection = new EventEmitter();
+    connection.state = { status: 'ready' };
+    connection.subscribe = () => {};
+    connection.destroy = () => {
+      const before = connection.state;
+      connection.state = { status: 'destroyed' };
+      connection.emit('stateChange', before, connection.state);
+    };
+    return connection;
+  };
+  music.engine.ready = async () => {};
+  music.engine.createPlayer = () => {
+    const player = new EventEmitter();
+    player.state = { status: 'idle' };
+    player.played = [];
+    const to = (next) => {
+      const before = player.state;
+      player.state = next;
+      player.emit('stateChange', before, next);
+    };
+    player.play = (resource) => { player.played.push(resource.metadata.title); to({ status: 'playing', resource }); };
+    player.stop = () => { if (player.state.status !== 'idle') to({ status: 'idle' }); return true; };
+    player.pause = () => { to({ ...player.state, status: 'paused' }); return true; };
+    player.unpause = () => { to({ ...player.state, status: 'playing' }); return true; };
+    player.finish = (ms) => { player.state.resource.playbackDuration = ms; to({ status: 'idle' }); };
+    players.push(player);
+    return player;
+  };
+  const resources = [];
+  music.engine.createResource = (track, volume) => {
+    const resource = { metadata: track, playbackDuration: 0, volume: { value: volume / 100, setVolume(v) { this.value = v; } } };
+    resources.push(resource);
+    return { resource, stop: () => {} };
+  };
+  const addresses = { 'music.example': '93.184.216.34', 'radio.example': '93.184.216.35', 'home.example': '192.168.1.20' };
+  music.engine.lookup = async (host) => (addresses[host] ? [{ address: addresses[host] }] : []);
+  const station = { stationuuid: 'abc-123', name: 'Chill Beats FM', url_resolved: 'https://radio.example/chill', countrycode: 'US', codec: 'MP3', bitrate: 128, homepage: 'https://radio.example/' };
+  const web = {
+    'https://music.example/My_Song.mp3': { type: 'audio/mpeg' },
+    'https://music.example/page': { type: 'text/html; charset=utf-8' },
+    'https://music.example/list.m3u': { type: 'audio/x-mpegurl', body: '#EXTM3U\n#EXTINF:-1,Live\nhttps://radio.example/live\n' },
+  };
+  const fakeResponse = (url, { type = 'application/json', body = '', data, status = 200 } = {}) => ({
+    ok: status < 400, status, url, headers: new Headers({ 'content-type': type }),
+    text: async () => body, json: async () => data, body: { cancel: async () => {} },
+  });
+  const musicClient = { user: { id: 'u-cardify' }, channels: { fetch: async (id) => (id === 'c1' ? channel : guild.channels.cache.get(id)) } };
+  music.init({
+    client: musicClient,
+    request: async (url) => {
+      if (url.includes('radio-browser.info/json/stations')) return fakeResponse(url, { data: [station] });
+      if (url.includes('radio-browser.info/json/url')) return fakeResponse(url, { data: {} });
+      return web[url] ? fakeResponse(url, web[url]) : fakeResponse(url, { status: 404 });
+    },
+    clipAudioFor: async (link) =>
+      link.includes('/status/1') ? { url: 'https://video.example/clip.mp4', title: '@someone: a funny clip', link } : null,
+  });
+
+  const listener = (id) => ({ id, user: { bot: false } });
+  const vc = { id: 'v1', type: discord.ChannelType.GuildVoice, guild, joinable: true, permissionsFor: () => ({ has: () => true }) };
+  vc.members = new discord.Collection([['u-admin', listener('u-admin')], ['u-dj', listener('u-dj')], ['u-fan', listener('u-fan')]]);
+  guild.channels.cache.set('v1', vc);
+  const inVoice = (id, roleIds = []) => ({ id, voice: { channel: vc, channelId: 'v1' }, roles: { cache: new Set(roleIds) } });
+  const musicCommand = (name, sub, options = {}, { user = 'u-admin', canManage = true, voice = true, roleIds = [] } = {}) => {
+    const i = command(name, sub, options, { canManage });
+    i.user = { id: user, tag: `${user}#0001` };
+    i.member = voice ? inVoice(user, roleIds) : { id: user, voice: { channel: null, channelId: null }, roles: { cache: new Set() } };
+    return i;
+  };
+  const sent = () => [...messages.values()];
+  const cardText = (m) => (m.payload.components ? textOf(m.payload) : m.payload.content ?? '');
+  const lastSent = () => sent().at(-1);
+  const session = () => music.sessions.get('g1');
+  const player = () => players.at(-1);
+  const replyText = (i) => {
+    const last = answer(i);
+    return last?.content ?? textOf(json(last));
+  };
+  const buttonIds = (payload) => walk(payload.components).filter((c) => c.type === ComponentType.Button).map((c) => c.custom_id);
+
+  await check('/play while not in a voice channel -> asked to join one', async () => {
+    const text = replyText(await run(musicCommand('play', null, { link: 'https://music.example/My_Song.mp3' }, { voice: false })));
+    return text.includes('Join a voice channel') && joins.length === 0 ? null : text;
+  });
+  await check('/play with nothing -> asks for a link or file', async () => {
+    const text = replyText(await run(musicCommand('play', null, {})));
+    return text.includes('`link` or a `file`') ? null : text;
+  });
+  for (const [label, link, expected] of [
+    ['a YouTube link', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', "can't play YouTube or Spotify"],
+    ['a Spotify link', 'https://open.spotify.com/track/abc', "can't play YouTube or Spotify"],
+    ['a link into the home network', 'http://home.example/song.mp3', 'public websites'],
+    ['a localhost link', 'http://127.0.0.1:8080/song.mp3', 'public websites'],
+    ['a web page', 'https://music.example/page', 'web page, not audio'],
+    ['a broken link', 'https://music.example/missing.mp3', 'error 404'],
+    ['an X post without a video', 'https://x.com/someone/status/2', 'no video to play'],
+    ['a Twitch channel', 'https://www.twitch.tv/somestreamer', 'only play Twitch clips'],
+  ]) {
+    await check(`/play ${label} -> refused privately, nothing joined`, async () => {
+      const i = await run(musicCommand('play', null, { link }));
+      const last = i.log.at(-1);
+      const deleted = i.log.some((l) => l[0] === 'deleteReply');
+      return last[0] === 'followUp' && last[1].content.includes(expected) && last[1].flags === MessageFlags.Ephemeral && deleted && joins.length === 0 ? null : JSON.stringify(i.log);
+    });
+  }
+  await check('/play an mp3 link -> joins the voice channel, plays it, posts the Now playing card', async () => {
+    const i = await run(musicCommand('play', null, { link: 'https://music.example/My_Song.mp3' }));
+    const text = replyText(i);
+    if (!text.startsWith('▶️ <@u-admin> started **[My Song](https://music.example/My_Song.mp3)** in <#v1>')) return text;
+    if (joins.join() !== 'v1' || player().played.join() !== 'My Song' || resources.at(-1).volume.value !== 0.6) return `${joins} ${player()?.played} ${resources.at(-1)?.volume.value}`;
+    await new Promise((r) => setImmediate(r));
+    const card = lastSent().payload;
+    const cardText = textOf(card);
+    return cardText.includes('### 🎶 Now playing') && cardText.includes('added by <@u-admin>') && buttonIds(card).join() === 'music:pause,music:skip,music:stop,music:queue' && card.allowedMentions.parse.length === 0
+      ? null
+      : cardText;
+  });
+  await check('/play a .m3u playlist -> queued as its stream; the card shows what is next', async () => {
+    const text = replyText(await run(musicCommand('play', null, { link: 'https://music.example/list.m3u' })));
+    const track = session().queue[0];
+    await new Promise((r) => setImmediate(r));
+    const cardText = textOf(session().nowPlaying.message.payload);
+    return text.includes('#1 in the queue') && track.url === 'https://radio.example/live' && track.live && cardText.includes('Up next: list') ? null : `${text} | ${JSON.stringify(track)} | ${cardText}`;
+  });
+  await check('/play an uploaded file and an X clip -> both queued', async () => {
+    await run(musicCommand('play', null, { file: { url: 'https://cdn.discordapp.com/attachments/1/2/Cool_Beat.ogg', name: 'Cool_Beat.ogg', contentType: 'audio/ogg' } }, { user: 'u-fan', canManage: false }));
+    await run(musicCommand('play', null, { link: 'https://x.com/someone/status/1' }));
+    const titles = session().queue.map((t) => `${t.kind}:${t.title}`).join(' | ');
+    return titles === 'link:list | file:Cool Beat | clip:@someone: a funny clip' ? null : titles;
+  });
+  await check('/play an image file -> refused', async () => {
+    const i = await run(musicCommand('play', null, { file: { url: 'https://cdn.discordapp.com/x.png', name: 'x.png', contentType: 'image/png' } }));
+    return i.log.at(-1)[1].content.includes("isn't audio") ? null : JSON.stringify(i.log);
+  });
+  await check('/music queue -> now playing and the numbered queue, privately', async () => {
+    const payload = answer(await run(musicCommand('music', 'queue')));
+    const text = textOf(json(payload));
+    return text.includes('**Now:** [My Song]') && text.includes('**2.** Cool Beat - <@u-fan>') && text.includes('**3.** [@someone: a funny clip]') && (payload.flags & MessageFlags.Ephemeral) ? null : text;
+  });
+  await check('/music-setup dj-role without Manage Server -> refused', async () => {
+    const text = replyText(await run(musicCommand('music-setup', 'dj-role', { role: 'r-artist' }, { canManage: false })));
+    return text.includes('Manage Server') ? null : text;
+  });
+  await check("with a DJ role: a listener can't skip someone else's song, but can skip their own and remove their own", async () => {
+    await run(musicCommand('music-setup', 'dj-role', { role: 'r-artist' }));
+    const refused = replyText(await run(musicCommand('music', 'skip', {}, { user: 'u-fan', canManage: false })));
+    if (!refused.includes('Only members with <@&r-artist>')) return refused;
+    const removed = replyText(await run(musicCommand('music', 'remove', { position: 2 }, { user: 'u-fan', canManage: false })));
+    if (!removed.includes('removed **Cool Beat**')) return removed;
+    const djSkip = replyText(await run(musicCommand('music', 'skip', {}, { user: 'u-dj', canManage: false, roleIds: ['r-artist'] })));
+    return djSkip.includes('skipped **[My Song]') && session().current.title === 'list' ? null : djSkip;
+  });
+  await check('a skip -> the old card becomes a "Played" line without buttons, a new card is posted', async () => {
+    await new Promise((r) => setImmediate(r));
+    const cards = sent().filter((m) => m.payload.components?.[0]?.type === ComponentType.Container && cardText(m).includes('My Song'));
+    const old = cards.find((m) => cardText(m).includes('Played'));
+    return old && buttonIds(old.payload).length === 0 && textOf(session().nowPlaying.message.payload).includes('### 🎶 Now playing') ? null : cards.map(cardText).join(' | ');
+  });
+  await check('someone outside the voice channel -> told to join it', async () => {
+    const text = replyText(await run(musicCommand('music', 'pause', {}, { user: 'u-other', canManage: false, voice: false })));
+    return text.includes('Join <#v1>') ? null : text;
+  });
+  await check('⏸️ on the card -> paused, the card shows Resume; ▶️ -> playing again', async () => {
+    const message = session().nowPlaying.message;
+    const clickButton = async (customId) => {
+      const log = [];
+      const i = { customId, guildId: 'g1', guild, message, user: { id: 'u-admin' }, member: inVoice('u-admin'), memberPermissions: { has: () => true }, log };
+      i.update = async (p) => log.push(['update', json(p)]);
+      i.reply = async (p) => log.push(['reply', p]);
+      await music.handleButton(i, customId.split(':')[1]);
+      return log.at(-1);
+    };
+    const paused = await clickButton('music:pause');
+    if (paused[0] !== 'update' || !textOf(paused[1]).includes('### 🎶 Paused')) return JSON.stringify(paused);
+    if (player().state.status !== 'paused') return player().state.status;
+    const resumed = await clickButton('music:pause');
+    return resumed[0] === 'update' && textOf(resumed[1]).includes('Now playing') && player().state.status === 'playing' ? null : JSON.stringify(resumed);
+  });
+  await check('a button on an old card -> "this player has finished"', async () => {
+    const old = sent().find((m) => cardText(m).includes('Played'));
+    const log = [];
+    const i = { customId: 'music:skip', guildId: 'g1', guild, message: old, user: { id: 'u-admin' }, member: inVoice('u-admin'), memberPermissions: { has: () => true } };
+    i.reply = async (p) => log.push(p);
+    await music.handleButton(i, 'skip');
+    return log[0]?.content.includes('finished') ? null : JSON.stringify(log);
+  });
+  await check('/music volume 30 -> the playing audio turns down', async () => {
+    const text = replyText(await run(musicCommand('music', 'volume', { percent: 30 })));
+    return text.includes('30%') && resources.at(-1).volume.value === 0.3 ? null : `${text} ${resources.at(-1).volume.value}`;
+  });
+  await check('a song that gives no audio -> "couldn\'t play" and the next one starts', async () => {
+    player().finish(200);
+    await new Promise((r) => setImmediate(r));
+    const warning = sent().find((m) => m.payload.content?.includes("Couldn't play **list**"));
+    return warning && session().current.kind === 'clip' ? null : sent().map((m) => m.payload.content).filter(Boolean).join(' | ');
+  });
+  await check('/music loop track -> the song plays again when it ends', async () => {
+    await run(musicCommand('music', 'loop', { mode: 'track' }));
+    player().finish(60_000);
+    const again = session().current?.kind === 'clip' && player().played.filter((t) => t.startsWith('@someone')).length === 2;
+    await run(musicCommand('music', 'loop', { mode: 'off' }));
+    return again ? null : player().played.join(' | ');
+  });
+  await check('everyone leaves the voice channel -> paused, and playing again when someone comes back', async () => {
+    const everyone = vc.members;
+    vc.members = new discord.Collection([['u-cardify', { id: 'u-cardify', user: { bot: true } }]]);
+    music.voiceStateChanged({ channelId: 'v1', id: 'u-admin', guild }, { channelId: null, id: 'u-admin', guild });
+    const pausedAlone = player().state.status === 'paused' && session().timers.alone;
+    vc.members = everyone;
+    music.voiceStateChanged({ channelId: null, id: 'u-fan', guild }, { channelId: 'v1', id: 'u-fan', guild });
+    return pausedAlone && player().state.status === 'playing' && !session().timers.alone ? null : `${player().state.status} ${Boolean(session().timers.alone)}`;
+  });
+  await check('the queue runs out -> waits to leave (unless 24/7 is on)', async () => {
+    player().finish(60_000);
+    return session().current === null && session().timers.idle ? null : `${session().current?.title} ${Boolean(session().timers.idle)}`;
+  });
+  await check('/radio -> plays the station; suggestions come from the radio directory', async () => {
+    const text = replyText(await run(musicCommand('radio', null, { station: 'uuid:abc-123' })));
+    const suggestions = [];
+    await music.handleAutocomplete({ commandName: 'radio', options: { getFocused: () => 'chill' }, respond: async (s) => suggestions.push(...s) });
+    const current = session().current;
+    return text.includes('started **[Chill Beats FM](https://radio.example/)**') && current.kind === 'radio' && current.url === 'https://radio.example/chill' && !session().timers.idle &&
+      suggestions[0]?.name === 'Chill Beats FM (US · MP3 128k)' && suggestions[0].value === 'uuid:abc-123'
+      ? null
+      : `${text} | ${JSON.stringify(suggestions)}`;
+  });
+  await check('/music-setup channel and queue-limit -> enforced; status lists everything', async () => {
+    await run(musicCommand('music-setup', 'queue-limit', { songs: 1 }));
+    await run(musicCommand('play', null, { link: 'https://music.example/My_Song.mp3' }));
+    const full = replyText(await run(musicCommand('play', null, { link: 'https://music.example/My_Song.mp3' })));
+    if (!full.includes('queue is full (1 songs)')) return full;
+    await run(musicCommand('music-setup', 'channel', { channel: { id: 'c-music' } }));
+    const elsewhere = replyText(await run(musicCommand('music', 'queue')));
+    if (!elsewhere.includes('Music commands go in <#c-music>')) return elsewhere;
+    await run(musicCommand('music-setup', 'channel', {}));
+    const status = replyText(await run(musicCommand('music-setup', 'status')));
+    return status.includes('**DJ role:** <@&r-artist>') && status.includes('**Queue limit:** 1 songs') && status.includes('in <#v1>, playing [Chill Beats FM]') ? null : status;
+  });
+  await check('/music stop -> leaves, clears everything, the card loses its buttons', async () => {
+    const card = session().nowPlaying.message;
+    const text = replyText(await run(musicCommand('music', 'stop')));
+    const after = replyText(await run(musicCommand('music', 'queue')));
+    return text.includes('stopped the music') && !music.sessions.has('g1') && buttonIds(card.payload).length === 0 && after.includes("I'm not playing anything") ? null : `${text} | ${after}`;
   });
 
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL FEATURE TESTS PASSED');

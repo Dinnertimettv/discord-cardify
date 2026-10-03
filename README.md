@@ -9,6 +9,10 @@ TikTok, Instagram, Twitch, YouTube, and paywalled-news links and replaces the
 original message with a clean card — full image galleries, playable video,
 stats, and paywall-free articles included.
 
+It also covers what servers usually need several bots for: role panels,
+Twitch and YouTube alerts, moderation and auto-mod, a mod log, welcome
+messages, leveling, and a music player - see [Server features](#server-features).
+
 (Discord doesn't allow "discord" in a bot's username, so in Discord the bot
 goes by **Cardify**.)
 
@@ -204,13 +208,38 @@ site doesn't expose either tag, the fallback just skips the title line.
   `index.js`, black by default) - the v2 API doesn't expose a per-author
   palette color to pull from instead.
 
+## Server features
+
+Every feature is set up with slash commands. The setup commands are hidden
+from members who lack the permission they need, and the bot checks that
+permission again each time.
+
+| Command | Who | What it does |
+|---|---|---|
+| `/roles` | Manage Roles | Role panels: members pick roles with **buttons**, a **dropdown**, or **emoji reactions** (optionally one at a time). Never hands out moderator-level roles, bot roles, or roles above the bot's own. |
+| `/emoji add`, `/sound add` | Create Expressions | Add an emoji (upload, link, or copy another server's) or a soundboard sound. |
+| `/alerts` | Manage Server | Post when a Twitch streamer goes live or a YouTube channel uploads, with an optional role ping. |
+| `/mod` | Timeout / Kick / Ban Members, Manage Messages | `warn`, `warnings`, `timeout`, `kick`, `ban`, `unban`, `purge` - never on the owner, the bot, or anyone with an equal or higher role. |
+| `/automod` | Manage Server | Sets up Discord's own AutoMod: blocked words, invite links, spam, mention limits, profanity lists. |
+| `/logs` | Manage Server | A mod log channel: deleted and edited messages, bans, joins and leaves, every `/mod` action. |
+| `/welcome` | Manage Server | Welcome and goodbye messages, and a role every new member gets. |
+| `/rank`, `/leaderboard`, `/levels` | everyone / Manage Server | Leveling: XP for chatting (once a minute), level-up messages, and roles as rewards. Off until `/levels on`. |
+| `/play`, `/radio`, `/music` | everyone | A music player for voice channels: uploaded files, direct audio links, internet radio (searchable), and the sound of X / TikTok / Instagram / Twitch clips. Queue, skip, pause, volume, loop, shuffle, plus buttons on the "Now playing" card. YouTube and Spotify aren't supported. |
+| `/music-setup` | Manage Server | A DJ role, a music-only channel, the starting volume, the queue limit, and 24/7 mode. |
+
+Settings are saved in the `data/` folder. Welcome messages, auto-roles, and
+join/leave logs need the **Server Members Intent** (below); the bot checks
+for it at startup and works without it.
+
 ## Setup
 
 ### 1. Create the bot application
 
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) → **New Application**.
 2. Go to **Bot** → **Add Bot**.
-3. Under **Privileged Gateway Intents**, enable **Message Content Intent**.
+3. Under **Privileged Gateway Intents**, enable **Message Content Intent**
+   (and **Server Members Intent** if you want welcome messages, auto-roles,
+   and join/leave logs).
 4. Click **Reset Token** and copy it — you'll need it for `.env`.
 
 ### 2. Invite it to your server
@@ -219,6 +248,7 @@ In **OAuth2 → URL Generator**:
 
 - Scopes: `bot`, `applications.commands` (for the `/embeds` command)
 - Bot Permissions: `View Channels`, `Send Messages`, `Read Message History`, `Manage Messages`, `Embed Links`, `Create Public Threads`, `Send Messages in Threads`, `Manage Threads`, `Pin Messages`, `Manage Webhooks`, `Create Invite`, `Use Application Commands`
+- For the server features: `Manage Roles`, `Create Expressions`, `Add Reactions`, `Timeout Members`, `Kick Members`, `Ban Members`, `Manage Server` (for AutoMod), `Connect`, `Speak` - or just `Administrator`
 
 Open the generated URL and add the bot to your server. Then, in the
 Developer Portal under **Bot**, turn off **Public Bot** so only you can add
@@ -232,7 +262,8 @@ auto-created role, and toggle on any new permissions there instead.
 
 ### 3. Install and run
 
-Requires Node.js 18.17 or newer.
+Requires Node.js 22.12 or newer. `npm install` also downloads ffmpeg
+(about 80 MB) for the music player.
 
 ```bash
 npm install

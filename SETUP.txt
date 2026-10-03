@@ -60,6 +60,10 @@ Node.js is a free program the bot needs to run.
      Click "Save Changes" at the bottom.
      (Without this, the bot can't read the links people post.)
 
+     Optional: also turn ON "Server Members Intent" if you want welcome
+     messages, a role for new members, and joins/leaves in the mod log.
+     (Everything else works without it.)
+
   5. Scroll back up and click "Reset Token", then "Yes, do it!".
      Click "Copy" to copy the token.
 
@@ -95,7 +99,9 @@ You need to be an admin of the Discord server for this part.
      instead: View Channels, Send Messages, Read Message History,
      Manage Messages, Embed Links, Create Public Threads, Send Messages
      in Threads, Manage Threads, Pin Messages, Manage Webhooks,
-     Create Invite, Use Application Commands.)
+     Create Invite, Use Application Commands - and for the server
+     features: Manage Roles, Create Expressions, Add Reactions, Timeout
+     Members, Kick Members, Ban Members, Manage Server, Connect, Speak.)
 
   4. At the very bottom of the page there is a link. Click "Copy".
 

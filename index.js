@@ -15,7 +15,8 @@ const moderation = require('./features/moderation');
 const automod = require('./features/automod');
 const welcome = require('./features/welcome');
 const leveling = require('./features/leveling');
-const FEATURES = [roles, expressions, alerts, logs, moderation, automod, welcome, leveling];
+const music = require('./features/music');
+const FEATURES = [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music];
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -1826,6 +1827,7 @@ const BUTTON_HANDLERS = {
   'copy-yt': { run: copyYouTubeLink, failMessage: "Couldn't get that link." },
   'watch-yt': { run: watchOnDiscord, failMessage: "Couldn't open that video." },
   role: { run: (interaction, roleId) => roles.handleButton(interaction, roleId), failMessage: "Couldn't change your role - try again in a moment." },
+  music: { run: (interaction, action) => music.handleButton(interaction, action), failMessage: "Couldn't do that - try again in a moment." },
   'x-thread': { run: postThread, failMessage: `Couldn't post the thread - ${DELETED_OR_PRIVATE}` },
   dl: { run: downloadVideo, failMessage: `Couldn't get the video - ${DELETED_OR_PRIVATE}` },
   'translate-x': { run: translatePost, failMessage: "Couldn't translate that post right now - try again in a moment." },
@@ -1850,6 +1852,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } catch (err) {
       console.error('/embeds failed:', err);
       await replyPrivately(interaction, "Couldn't change that setting - check the bot's log.").catch(() => {});
+    }
+    return;
+  }
+  if (interaction.isAutocomplete()) {
+    for (const feature of FEATURES) {
+      if (await feature.handleAutocomplete?.(interaction).catch((err) => console.error(`/${interaction.commandName} suggestions failed:`, err))) return;
     }
     return;
   }
@@ -2215,6 +2223,37 @@ async function downloadVideo(interaction, platform, id) {
   await interaction.editReply({ content: ['⬇️ Open the video, then save it from there:', ...lines].join('\n') });
 }
 
+// The video behind an X, TikTok, Instagram or Twitch clip link, for the music
+// player to play its sound: { url, title, link }. Null when the text has no
+// such link, or the post has no video.
+async function clipAudioFor(text) {
+  const links = findLinks(text);
+  const short = (caption) => truncate(htmlToText(caption ?? '').replace(/\s+/g, ' '), 80);
+  if (links.tweets.length) {
+    const tweet = await fetchTweet(links.tweets[0][2]);
+    const url = [...postVideoUrls(tweet), ...postVideoUrls(tweet.quote)][0];
+    const by = tweet.author?.screen_name ? `@${tweet.author.screen_name}` : 'X post';
+    return url ? { url, title: tweet.text ? `${by}: ${short(tweet.text)}` : by, link: tweet.url } : null;
+  }
+  if (links.tiktok.length || links.instagram.length) {
+    const isTikTok = links.tiktok.length > 0;
+    const original = (isTikTok ? links.tiktok : links.instagram)[0].original;
+    const id = isTikTok ? (await resolveTikTokLink(original)).id : parseInstagramLink(original)?.code;
+    if (!id) return null;
+    const status = await fetchFixerStatus(isTikTok ? TIKTOK_FIX_DOMAIN : INSTAGRAM_FIX_DOMAIN, id);
+    const url = fixerVideoUrls(status)[0];
+    const by = status.account?.username ? `@${status.account.username}` : isTikTok ? 'TikTok' : 'Instagram';
+    return url ? { url, title: status.content ? `${by}: ${short(status.content)}` : by, link: status.url || original } : null;
+  }
+  const clip = links.twitch.find((link) => link.kind === 'clip');
+  if (clip) {
+    const data = await fetchTwitch('clip', clip.id);
+    const url = twitchClipVideo(data);
+    return url ? { url, title: data.title || 'Twitch clip', link: clip.url } : null;
+  }
+  return null;
+}
+
 // "Translate" on an X post: the post (and the post it quotes) translated into
 // the clicker's own Discord language, privately.
 async function translatePost(interaction, tweetId) {
@@ -2483,6 +2522,8 @@ client.once(Events.ClientReady, async (readyClient) => {
   });
   logs.init(client);
   welcome.init({ membersIntentOn: () => client.options.intents.has(GatewayIntentBits.GuildMembers) });
+  // The music player plays the sound of the same clips the cards show.
+  music.init({ client, request, clipAudioFor });
   // Alerts reuse the Twitch and YouTube cards from this file.
   alerts.init({
     client,
@@ -2512,6 +2553,16 @@ for (const [event, added] of [
     roles.handleReaction(reaction, user, added).catch((err) => console.error('Role panel reaction failed:', err));
   });
 }
+
+// The music player leaves when everyone else does.
+client.on(Events.VoiceStateUpdate, (before, after) => {
+  if (!isAllowedServer(after.guild.id)) return;
+  try {
+    music.voiceStateChanged(before, after);
+  } catch (err) {
+    console.error('Music voice update failed:', err);
+  }
+});
 
 // A deleted role panel message takes its panel with it; deletions and edits
 // go in the mod log.

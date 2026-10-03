@@ -87,6 +87,23 @@ Cardify grows from a link bot into an all-in-one server bot.
 - `/rank` shows a member's level, rank and progress bar; `/leaderboard`
   shows the top 10.
 
+**Music** (`/play`, `/radio`, `/music`, `/music-setup`)
+- `/play` plays an uploaded audio or video file, a direct audio link or
+  stream (including .m3u / .pls playlists), or the sound of an X, TikTok,
+  Instagram, or Twitch clip. YouTube and Spotify aren't supported.
+- `/radio` searches thousands of internet radio stations by name, genre or
+  country (from the radio-browser.info directory) as you type.
+- A **Now playing** card with ⏸️ Pause, ⏭️ Skip, ⏹️ Stop and 📜 Queue
+  buttons; `/music` adds `queue`, `skip`, `pause`, `resume`, `stop`,
+  `volume`, `remove`, `shuffle`, and `loop` (this song or the whole queue).
+- Pauses when everyone leaves the voice channel and leaves after 2
+  minutes; leaves 3 minutes after the queue runs out.
+- `/music-setup` (Manage Server): a DJ role (only DJs can skip others'
+  songs, stop, or change the volume while others are listening), a
+  music-only channel, the starting volume, the queue limit, and 24/7 mode.
+- Links are only played from the public internet, never this PC's own
+  network, and the audio player can't open local files.
+
 ### Permissions
 
 - **Manage Roles** (and Cardify's role above the roles it hands out) - for
@@ -94,6 +111,12 @@ Cardify grows from a link bot into an all-in-one server bot.
 - **Create Expressions** - for `/emoji` and `/sound`.
 - **Timeout / Kick / Ban Members** and **Manage Messages** - for `/mod`.
 - **Manage Server** - for `/automod`.
+- **Connect** and **Speak** - for the music player.
+
+### Requirements
+
+- Node.js 22.12 or newer (for voice). `npm install` adds the voice
+  library, an Opus encoder, and ffmpeg (about 80 MB).
 
 ## 2.0.0 - September 27, 2026
 
