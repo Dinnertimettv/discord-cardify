@@ -1,5 +1,45 @@
 # Changelog
 
+## 2.3.0 - October 3, 2026
+
+### New
+
+**Join to Create voice channels** (`/join-to-create`)
+- Join a Join to Create channel and the bot makes you your own voice
+  channel in the same category, then moves you in. It's deleted when
+  everyone leaves.
+- Each Join to Create channel has its own name pattern (`{name}` is the
+  member's name) and an optional member limit.
+- The owner can rename their channel or set a limit with Discord's own
+  Edit Channel, and use the 🔒 Lock, 🔓 Unlock and 👑 Claim buttons in its
+  chat.
+- Also in the last step of `/setup`. Needs the Manage Channels, Move
+  Members and Manage Roles permissions.
+
+**Music in the voice channel's chat**
+- Music commands work in the chat of the voice channel the music is in,
+  and the "Now playing" card shows up there. On by default;
+  `/music-setup voice-chat-only` turns it off. Admins can still use
+  `/music` from anywhere.
+- A quick how-to card is posted in the chat every time the music joins.
+
+**Random welcome and level-up messages**
+- Add several welcome messages with `/welcome add-message` and one is
+  picked at random for each new member (`/welcome remove-message`,
+  `/welcome messages`).
+- Level-ups pick a random message that fits the level: jokes for levels
+  1-4, up to big celebrations from level 20. Add your own per group with
+  `/levels add-message` (plus `remove-message`, `messages` and `test`).
+
+### Changed
+
+- `/levels message` is replaced by `/levels add-message`. A message set
+  with the old command carries over to every group.
+- Role panels treat voice moderation (Mute, Deafen and Move Members) as
+  moderator-level, so they won't hand those roles out.
+- When a role panel can't give a role, members get a friendly note to ask
+  an admin, and admins see what to fix.
+
 ## 2.2.0 - October 3, 2026
 
 ### New
