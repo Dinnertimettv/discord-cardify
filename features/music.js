@@ -107,7 +107,7 @@ const SETUP_COMMAND = new SlashCommandBuilder()
   .addSubcommand((s) =>
     s
       .setName('dj-role')
-      .setDescription("Only this role can skip others' songs, stop, or change the volume (empty: everyone)")
+      .setDescription("Only this role can skip others' songs, stop, or change the volume (no role: everyone)")
       .addRoleOption((o) => o.setName('role').setDescription('The DJ role'))
   )
   .addSubcommand((s) =>

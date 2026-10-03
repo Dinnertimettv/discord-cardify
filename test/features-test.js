@@ -1343,10 +1343,18 @@ function click(message, customId, member = alex) {
     await moveTo(samVoice, null);
     return text.includes("doesn't make voice channels anymore") && !hub.deleted && madeChannels.length === 2 && tempVoice.hubsIn('g1').length === 0 ? null : text;
   });
-  await check('/join-to-create add with no channel -> I make "➕ Join to Create" in the picked category', async () => {
-    const text = answer(await run(command('join-to-create', 'add', { category: { id: 'cat1' } }))).content;
+  await check('/join-to-create create -> I make "➕ Join to Create" in the picked category, with its permissions', async () => {
+    const text = answer(await run(command('join-to-create', 'create', { category }))).content;
     const made = madeChannels.at(-1);
-    return made.name === '➕ Join to Create' && made.options.parent === 'cat1' && tempVoice.hubsIn('g1').join() === made.id && text.includes(`<#${made.id}> is a Join to Create channel`) ? null : text;
+    const copied = made.options.permissionOverwrites?.find((o) => o.id === 'r-gamer');
+    return made.name === '➕ Join to Create' && made.options.parent === 'cat1' && copied && (BigInt(copied.deny) & PermissionFlagsBits.MoveMembers) && tempVoice.hubsIn('g1').join() === made.id && text.includes(`<#${made.id}> is a Join to Create channel`)
+      ? null
+      : text;
+  });
+  await check('/join-to-create create with nothing picked -> made with no category', async () => {
+    const text = answer(await run(command('join-to-create', 'create'))).content;
+    const made = madeChannels.at(-1);
+    return made.name === '➕ Join to Create' && made.options.parent === undefined && made.options.permissionOverwrites === undefined && tempVoice.hubsIn('g1').length === 2 ? null : text;
   });
   guild.members.me = meBefore;
 

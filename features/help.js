@@ -93,8 +93,8 @@ const GUIDES = {
   tempvoice: {
     about: 'Join a special voice channel and I make you your very own voice channel, then move you into it. You can name it, lock it, and set how many people fit. When everyone leaves, it goes away by itself!',
     start: [
-      'Make the special channel: `/join-to-create add`',
-      'Or use one you already have: `/join-to-create add channel:#Join to Create`',
+      'Make the special channel: `/join-to-create create`',
+      'Or use a voice channel you already have: `/join-to-create add channel:#Hang-out`',
       'Join it - I make your own channel and move you in.',
       'In your channel\'s chat, press 🔒 Lock, 🔓 Unlock or 👑 Claim.',
     ],
@@ -114,6 +114,8 @@ const PERMISSION_NAMES = {
   BanMembers: 'Ban Members',
   ManageMessages: 'Manage Messages',
   ManageGuildExpressions: 'Manage Expressions',
+  // The old name for the same permission.
+  ManageEmojisAndStickers: 'Manage Expressions',
   CreateGuildExpressions: 'Create Expressions',
   Administrator: 'Administrator',
 };
@@ -127,8 +129,8 @@ function init({ commands }) {
 
 function whoCanUse(command) {
   if (!command?.default_member_permissions) return '👥 Everyone';
-  const names = new PermissionsBitField(BigInt(command.default_member_permissions)).toArray().map((name) => PERMISSION_NAMES[name] ?? name);
-  return `🔒 Needs **${names.join(' or ')}**`;
+  const names = new PermissionsBitField(BigInt(command.default_member_permissions)).toArray().map((name) => PERMISSION_NAMES[name] ?? name.replace(/([a-z])([A-Z])/g, '$1 $2'));
+  return `🔒 Needs **${[...new Set(names)].join(' or ')}**`;
 }
 
 const isLocked = (command) => Boolean(command?.default_member_permissions);

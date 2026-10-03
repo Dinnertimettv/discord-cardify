@@ -99,7 +99,7 @@ const LEVELS_COMMAND = new SlashCommandBuilder()
   .addSubcommand((s) =>
     s
       .setName('channel')
-      .setDescription('Where level-ups are announced (leave empty: wherever the member is chatting)')
+      .setDescription('Where level-ups are announced (run it without a channel: where the member chats)')
       .addChannelOption((o) => o.setName('channel').setDescription('The channel').addChannelTypes(ChannelType.GuildText))
   )
   .addSubcommand((s) =>
@@ -128,7 +128,7 @@ const LEVELS_COMMAND = new SlashCommandBuilder()
       .setName('reward')
       .setDescription('Give a role when members reach a level')
       .addIntegerOption((o) => o.setName('level').setDescription('The level').setRequired(true).setMinValue(1).setMaxValue(500))
-      .addRoleOption((o) => o.setName('role').setDescription('The role (leave empty to remove this level\'s reward)'))
+      .addRoleOption((o) => o.setName('role').setDescription('The role (run it without a role to remove this level\'s reward)'))
   )
   .addSubcommand((s) =>
     s

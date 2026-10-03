@@ -62,7 +62,7 @@ const WELCOME_COMMAND = new SlashCommandBuilder()
   .addSubcommand((s) =>
     s
       .setName('autorole')
-      .setDescription('A role every new member gets (leave empty to turn it off)')
+      .setDescription('A role every new member gets (run it without a role to turn it off)')
       .addRoleOption((o) => o.setName('role').setDescription('The role'))
   )
   .addSubcommand((s) =>

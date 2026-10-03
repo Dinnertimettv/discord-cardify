@@ -144,7 +144,7 @@ function postingLines(guild) {
     `👋 **Welcome:** ${channel(welcome.channelFor(guild.id, 'welcome')) ?? 'not set'} · 🚪 **Goodbye:** ${channel(welcome.channelFor(guild.id, 'goodbye')) ?? 'not set'}${on('welcome') ? '' : off}`,
     `⭐ **Level-ups:** ${channel(leveling.announceChannel(guild.id)) ?? 'where the person is chatting'}${on('leveling') ? '' : off}`,
     `🎵 **Music:** the "Now playing" card goes ${voiceChatOnly ? "in the music's voice channel chat" : 'where someone uses `/play`'}; I join ${voiceChannels.length ? voiceChannels.map((id) => `<#${id}>`).join(', ') : 'any voice channel'}${on('music') ? '' : off}`,
-    `➕ **Join to Create:** ${hubs.length ? `${access.mentionChannels(hubs)} make new voice channels` : 'none yet - add one with `/join-to-create add`'}${on('tempvoice') ? '' : off}`,
+    `➕ **Join to Create:** ${hubs.length ? `${access.mentionChannels(hubs)} make new voice channels` : 'none yet - make one with `/join-to-create create`'}${on('tempvoice') ? '' : off}`,
   ];
 }
 
@@ -289,7 +289,7 @@ function stepControls(step, guild) {
     }
     if (on('tempvoice')) {
       ask(
-        '➕ **Join to Create** - when someone joins one of these, I make them their own voice channel. Pick nothing to turn it off. *Tip: make a brand-new one with `/join-to-create add`.*',
+        '➕ **Join to Create** - when someone joins one of these, I make them their own voice channel. Pick nothing to turn it off. *Tip: make a brand-new one with `/join-to-create create`.*',
         channelMenu(guild, 'setup:set:hubs', { placeholder: 'No Join to Create channels (pick some)...', types: [ChannelType.GuildVoice], max: 10, picked: tempVoice.hubsIn(id) })
       );
       const missing = tempVoice.missingPermissions(guild);
@@ -329,7 +329,7 @@ function doneText(guild) {
     on.some((f) => f.key === 'welcome') && '`/welcome test` - see what new members will see',
     on.some((f) => f.key === 'automod') && '`/automod status` - turn on spam and bad-word blocking',
     on.some((f) => f.key === 'music') && "`/radio` - play some music (join a voice channel, then use it in that channel's chat)",
-    on.some((f) => f.key === 'tempvoice') && '`/join-to-create add` - a voice channel that makes a new voice channel for whoever joins',
+    on.some((f) => f.key === 'tempvoice') && '`/join-to-create create` - a voice channel that makes a new voice channel for whoever joins',
     '`/help` - see everything I can do',
   ].filter(Boolean);
   return [

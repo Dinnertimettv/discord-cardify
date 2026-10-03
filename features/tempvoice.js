@@ -36,6 +36,9 @@ const OWNER_ALLOW = PermissionFlagsBits.ViewChannel | PermissionFlagsBits.Connec
 // Cardify itself always gets in (to move people, to play music, to clean up).
 const BOT_ALLOW = PermissionFlagsBits.ViewChannel | PermissionFlagsBits.Connect | PermissionFlagsBits.Speak | PermissionFlagsBits.ManageChannels | PermissionFlagsBits.MoveMembers;
 
+const nameOption = (o) => o.setName('name').setDescription("Name for the channels it makes - {name} is the member's name").setMaxLength(90);
+const limitOption = (o) => o.setName('limit').setDescription('How many people fit in each one (0: no limit)').setMinValue(0).setMaxValue(99);
+
 const COMMAND = new SlashCommandBuilder()
   .setName('join-to-create')
   .setDescription('Voice channels that make a new voice channel for whoever joins them')
@@ -43,12 +46,19 @@ const COMMAND = new SlashCommandBuilder()
   .setContexts(InteractionContextType.Guild)
   .addSubcommand((s) =>
     s
+      .setName('create')
+      .setDescription('Make a brand-new Join to Create voice channel')
+      .addChannelOption((o) => o.setName('category').setDescription('Which category to put it in').addChannelTypes(ChannelType.GuildCategory))
+      .addStringOption(nameOption)
+      .addIntegerOption(limitOption)
+  )
+  .addSubcommand((s) =>
+    s
       .setName('add')
-      .setDescription('Make a Join to Create channel (or turn one of your voice channels into one)')
-      .addChannelOption((o) => o.setName('channel').setDescription('A voice channel to use (leave empty and I make a new one)').addChannelTypes(ChannelType.GuildVoice))
-      .addChannelOption((o) => o.setName('category').setDescription('Where to put the new channel, if I make one').addChannelTypes(ChannelType.GuildCategory))
-      .addStringOption((o) => o.setName('name').setDescription("Name for the channels it makes - {name} is the member's name").setMaxLength(90))
-      .addIntegerOption((o) => o.setName('limit').setDescription('How many people fit in each one (0: no limit)').setMinValue(0).setMaxValue(99))
+      .setDescription('Turn one of your voice channels into a Join to Create channel (or change one)')
+      .addChannelOption((o) => o.setName('channel').setDescription('The voice channel').setRequired(true).addChannelTypes(ChannelType.GuildVoice))
+      .addStringOption(nameOption)
+      .addIntegerOption(limitOption)
   )
   .addSubcommand((s) =>
     s
@@ -276,21 +286,31 @@ async function handleCommand(interaction) {
   const by = `${interaction.user.tag} (${interaction.user.id})`;
   const offNote = access.isEnabled(guild.id, 'tempvoice') ? '' : '\n⚠️ **Join to Create** is turned off right now. Turn it on with `/access feature feature:Join to Create on:True`.';
 
-  if (sub === 'add') {
+  if (sub === 'create' || sub === 'add') {
     const missing = missingPermissions(guild);
     if (missing.length) {
       await reply(`I need these permissions first: **${missing.join(', ')}**. Give them to my role in Server Settings → Roles.`);
       return true;
     }
-    const picked = interaction.options.getChannel('channel');
-    if (picked && data.rooms[picked.id]) {
-      await reply("That's one of the channels I made for someone - pick a different voice channel.");
-      return true;
-    }
-    let hub = picked ? guild.channels.cache.get(picked.id) ?? picked : null;
-    if (!hub) {
-      const category = interaction.options.getChannel('category');
-      hub = await guild.channels.create({ name: HUB_NAME, type: ChannelType.GuildVoice, parent: category?.id, reason: `Join to Create, set up by ${by}` });
+    let hub;
+    if (sub === 'add') {
+      const picked = interaction.options.getChannel('channel', true);
+      if (data.rooms[picked.id]) {
+        await reply("That's one of the channels I made for someone - pick a different voice channel.");
+        return true;
+      }
+      hub = guild.channels.cache.get(picked.id) ?? picked;
+    } else {
+      const picked = interaction.options.getChannel('category');
+      const category = picked ? guild.channels.cache.get(picked.id) ?? picked : null;
+      hub = await guild.channels.create({
+        name: HUB_NAME,
+        type: ChannelType.GuildVoice,
+        parent: category?.id,
+        // Same permissions as the category, like a synced channel.
+        permissionOverwrites: category?.permissionOverwrites?.cache.map((o) => ({ id: o.id, type: o.type, allow: o.allow.bitfield, deny: o.deny.bitfield })),
+        reason: `Join to Create, set up by ${by}`,
+      });
     }
     const before = data.hubs[hub.id];
     data.hubs[hub.id] = {
@@ -319,7 +339,7 @@ async function handleCommand(interaction) {
     await reply(
       [
         `**Join to Create:** ${access.isEnabled(guild.id, 'tempvoice') ? 'on' : 'off'}`,
-        `**Join to Create channels:** ${hubs.length ? `\n${hubs.join('\n')}` : 'none yet - make one with `/join-to-create add`'}`,
+        `**Join to Create channels:** ${hubs.length ? `\n${hubs.join('\n')}` : 'none yet - make one with `/join-to-create create`'}`,
         `**Channels open right now:** ${rooms.length ? `\n${rooms.join('\n')}` : 'none'}`,
       ].join('\n')
     );
