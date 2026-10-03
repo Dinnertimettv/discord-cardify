@@ -248,7 +248,7 @@ decide whose links get cards and who earns XP.
 | `/automod` | Manage Server | Sets up Discord's own AutoMod: blocked words, invite links, spam, mention limits, profanity lists. |
 | `/logs` | Manage Server | A mod log channel: deleted and edited messages, bans, joins and leaves, every `/mod` action. |
 | `/welcome` | Manage Server | Welcome and goodbye messages, and a role every new member gets. |
-| `/rank`, `/leaderboard`, `/levels` | everyone / Manage Server | Leveling: XP for chatting (once a minute), level-up messages, and roles as rewards. Off until `/levels on`. |
+| `/rank`, `/leaderboard`, `/levels` | everyone / Manage Server | Leveling: XP for chatting (once a minute), random level-up messages (jokes for the first levels, big cheers for high ones - add your own with `/levels add-message`), and roles as rewards. Off until `/levels on`. |
 | `/play`, `/radio`, `/music` | everyone | A music player for voice channels: search for a song by name, YouTube links and playlists, Spotify songs, albums and playlists (each song is found on YouTube Music), uploaded files, direct audio links, internet radio (searchable), and the sound of X / TikTok / Instagram / Twitch clips. Queue, skip, pause, volume, loop, shuffle, plus buttons on the "Now playing" card. |
 | `/music-setup` | Manage Server | A DJ role, which voice channels music can join, the starting volume, the queue limit, and 24/7 mode. |
 | `/setup`, `/access` | Manage Server | The setup guide, and who can use what, and where (see above). |

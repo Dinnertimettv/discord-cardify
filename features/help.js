@@ -71,8 +71,14 @@ const GUIDES = {
     ],
   },
   leveling: {
-    about: 'People earn XP when they chat (only once a minute, so spamming doesn\'t help). More XP means a higher level, and you can give roles as prizes!',
-    start: ['Turn it on: `/levels on on:True`', 'See your level: `/rank`', 'Give a prize role: `/levels reward level:5 role:@Active`'],
+    about: 'People earn XP when they chat (only once a minute, so spamming doesn\'t help). More XP means a higher level! I cheer every level-up with a random message - silly jokes for the first levels, big cheers for the high ones. You can give roles as prizes, too.',
+    start: [
+      'Turn it on: `/levels on on:True`',
+      'See your level: `/rank`',
+      'Give a prize role: `/levels reward level:5 role:@Active`',
+      'See the level-up messages: `/levels messages`',
+      'Add your own: `/levels add-message for:Levels 1-4 text:GG {user}, level {level}!`',
+    ],
   },
   music: {
     about: 'I play music in voice channels. Search for any song, or paste a YouTube or Spotify link (songs, albums and playlists work too). I can also play radio stations, songs you upload, and the sound from X, TikTok, Instagram and Twitch clips.',

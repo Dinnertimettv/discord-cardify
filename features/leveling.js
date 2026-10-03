@@ -1,6 +1,6 @@
 // Leveling: members earn XP for chatting (15-25 per message, at most once a
-// minute, so spamming doesn't pay), level up on MEE6's curve, and can get
-// roles at chosen levels. /rank and /leaderboard are for everyone; admins set
+// minute, so spamming doesn't pay), level up on MEE6's curve (with a random
+// message that fits the level), and can get roles at chosen levels. /rank and /leaderboard are for everyone; admins set
 // it up with /levels. Saved in data/levels.json.
 const {
   ChannelType,
@@ -21,7 +21,61 @@ const store = createStore('levels.json', { guilds: {} });
 
 const XP_COOLDOWN_MS = 60_000;
 const LEVEL_COLOR = 0xf1c40f;
-const DEFAULT_LEVEL_UP = '🎉 {user} reached **level {level}**!';
+const MAX_MESSAGES = 25;
+
+// Level-up messages come in groups by level - jokes for the first few levels,
+// big celebrations for the high ones. Each level-up picks one at random from
+// its group: the server's own messages, or these built-in ones.
+const TIERS = [
+  { key: 'rookie', from: 1, emoji: '🐣', range: 'Levels 1-4', who: 'just getting started' },
+  { key: 'regular', from: 5, emoji: '😎', range: 'Levels 5-9', who: 'regulars' },
+  { key: 'veteran', from: 10, emoji: '🔥', range: 'Levels 10-19', who: 'veterans' },
+  { key: 'legend', from: 20, emoji: '👑', range: 'Level 20 and up', who: 'legends' },
+];
+const DEFAULT_LEVEL_UPS = {
+  rookie: [
+    '🐣 {user} hit **level {level}**! Baby steps, but steps.',
+    "🍼 {user} reached **level {level}**. They grow up so fast. (They don't.)",
+    '🪫 {user} is now **level {level}**. Still loading... please wait.',
+    '🐌 {user} crawled all the way to **level {level}**. Slow and steady!',
+    '🏅 {user} reached **level {level}**! Somebody get them a participation trophy.',
+    '🎮 {user} hit **level {level}**. Tutorial almost complete.',
+    '📉 {user} is **level {level}** now. The bar was on the floor, and they cleared it!',
+    '🍞 {user} reached **level {level}**. Still a little undercooked, but rising.',
+  ],
+  regular: [
+    '📈 {user} reached **level {level}**! Okay, they actually talk now.',
+    "🛋️ {user} hit **level {level}**. They've basically moved in.",
+    '😎 {user} is now **level {level}**. Kinda cool, not gonna lie.',
+    '🍕 {user} reached **level {level}**! That earns them a slice.',
+    '🎯 {user} hit **level {level}**. Regular status: unlocked.',
+    '☕ {user} reached **level {level}** - powered by snacks and chatting.',
+  ],
+  veteran: [
+    "🔥 {user} reached **level {level}**. They're on fire!",
+    '⚔️ {user} hit **level {level}** - a battle-tested veteran of the chat.',
+    '💪 {user} is now **level {level}**. Touch grass? Never heard of it.',
+    '🚀 {user} just blasted off to **level {level}**!',
+    '🧠 {user} reached **level {level}**. Big brain chatter energy.',
+    '🏋️ {user} hit **level {level}**. Respect the grind.',
+  ],
+  legend: [
+    '👑 All hail {user}, now **level {level}**! A true legend of the server.',
+    '🐐 {user} reached **level {level}**. The GOAT has spoken.',
+    '⚡ {user} hit **level {level}**. Their power level is over 9000!',
+    '🌌 {user} has ascended to **level {level}**. Mere mortals can only watch.',
+    '🗿 {user} reached **level {level}**. Somebody build this person a statue.',
+    "🧙 {user} is now **level {level}**. They've seen things. They know things.",
+  ],
+};
+
+const tierFor = (level) => TIERS.findLast((tier) => level >= tier.from) ?? TIERS[0];
+const tierOption = (o) =>
+  o
+    .setName('for')
+    .setDescription('Which levels it is for')
+    .setRequired(true)
+    .addChoices(...TIERS.map((tier) => ({ name: `${tier.range} (${tier.who})`, value: tier.key })));
 
 const RANK_COMMAND = new SlashCommandBuilder()
   .setName('rank')
@@ -50,9 +104,24 @@ const LEVELS_COMMAND = new SlashCommandBuilder()
   )
   .addSubcommand((s) =>
     s
-      .setName('message')
-      .setDescription('Custom level-up text ({user} mentions them, {level} is the new level)')
-      .addStringOption((o) => o.setName('text').setDescription('The text (leave empty for the default)').setMaxLength(500))
+      .setName('add-message')
+      .setDescription('Add a level-up message - I pick one at random for each level-up')
+      .addStringOption(tierOption)
+      .addStringOption((o) => o.setName('text').setDescription('The text - {user} mentions them, {level} is their new level').setRequired(true).setMaxLength(500))
+  )
+  .addSubcommand((s) =>
+    s
+      .setName('remove-message')
+      .setDescription('Remove one of your level-up messages')
+      .addStringOption(tierOption)
+      .addIntegerOption((o) => o.setName('number').setDescription('Its number in /levels messages').setRequired(true).setMinValue(1))
+  )
+  .addSubcommand((s) => s.setName('messages').setDescription('See the level-up messages I pick from'))
+  .addSubcommand((s) =>
+    s
+      .setName('test')
+      .setDescription('Preview a level-up message, with you as the member (only you see it)')
+      .addIntegerOption((o) => o.setName('level').setDescription('The level to pretend you reached').setRequired(true).setMinValue(1).setMaxValue(500))
   )
   .addSubcommand((s) =>
     s
@@ -87,9 +156,23 @@ function levelFromXp(xp) {
 
 function guildData(guildId) {
   const guilds = store.load().guilds;
-  guilds[guildId] ??= { channelId: null, message: null, rewards: {}, users: {} };
-  return guilds[guildId];
+  const data = (guilds[guildId] ??= { channelId: null, messages: {}, rewards: {}, users: {} });
+  data.messages ??= {};
+  // Older settings had one custom message for every level.
+  if (data.message) {
+    for (const { key } of TIERS) data.messages[key] ??= [data.message];
+    delete data.message;
+  }
+  return data;
 }
+
+function pickLevelUp(data, level) {
+  const { key } = tierFor(level);
+  const pool = data.messages[key]?.length ? data.messages[key] : DEFAULT_LEVEL_UPS[key];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+const fillLevelUp = (template, userId, level) => template.replaceAll('{user}', `<@${userId}>`).replaceAll('{level}', String(level));
 
 function progressBar(into, needed) {
   const filled = Math.round((into / needed) * 12);
@@ -123,7 +206,7 @@ async function levelUp(message, data, level) {
     if (problem) console.error(`Level reward in "${message.guild.name}": ${problem.replace(/\*\*/g, '')}`);
     else await message.member.roles.add(roleId, `Reached level ${rewardLevel}`).catch((err) => console.error('Level reward failed:', err.message));
   }
-  const text = (data.message ?? DEFAULT_LEVEL_UP).replaceAll('{user}', `<@${message.author.id}>`).replaceAll('{level}', String(level));
+  const text = fillLevelUp(pickLevelUp(data, level), message.author.id, level);
   const channel = data.channelId ? await message.client.channels.fetch(data.channelId).catch(() => null) : message.channel;
   await channel
     ?.send({ content: text, allowedMentions: { users: [message.author.id] } })
@@ -133,6 +216,16 @@ async function levelUp(message, data, level) {
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
+
+// One group's messages for /levels messages: the server's own (numbered, so
+// they can be removed) or the built-in ones.
+function messageList(data, tier) {
+  const own = data.messages[tier.key] ?? [];
+  const clip = (text) => (text.length > 150 ? `${text.slice(0, 149)}…` : text);
+  const lines = own.length ? own.map((text, i) => `**${i + 1}.** ${clip(text)}`) : DEFAULT_LEVEL_UPS[tier.key].map((text) => `- ${text}`);
+  const header = `**${tier.emoji} ${tier.range}** (${tier.who}) · ${own.length ? 'your messages' : 'built-in - add your own with `/levels add-message`'}`;
+  return [header, ...lines].join('\n');
+}
 
 function ranked(data) {
   return Object.entries(data.users)
@@ -175,6 +268,10 @@ async function showLeaderboard(interaction) {
 
 async function configure(interaction) {
   const reply = (content) => interaction.reply({ content, flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } });
+  const replyCard = (...parts) => {
+    const container = new ContainerBuilder().setAccentColor(LEVEL_COLOR).addTextDisplayComponents(new TextDisplayBuilder().setContent(parts.join('\n\n').slice(0, 3900)));
+    return interaction.reply({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [container], allowedMentions: { parse: [] } });
+  };
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) return reply('Only people with the **Manage Server** permission can use /levels.');
   const data = guildData(interaction.guildId);
   const sub = interaction.options.getSubcommand();
@@ -191,10 +288,31 @@ async function configure(interaction) {
     store.save();
     return reply(picked ? `Level-ups are announced in <#${picked.id}>.` : 'Level-ups are announced wherever the member is chatting.');
   }
-  if (sub === 'message') {
-    data.message = interaction.options.getString('text') ?? null;
+  if (sub === 'add-message' || sub === 'remove-message') {
+    const tier = TIERS.find((t) => t.key === interaction.options.getString('for', true));
+    const messages = [...(data.messages[tier.key] ?? [])];
+    if (sub === 'add-message') {
+      if (messages.length >= MAX_MESSAGES) return reply(`${tier.range} already has ${MAX_MESSAGES} messages - remove one first with \`/levels remove-message\`.`);
+      messages.push(interaction.options.getString('text', true));
+    } else {
+      const number = interaction.options.getInteger('number', true);
+      if (!messages[number - 1]) {
+        return reply(messages.length ? `There's no message #${number} for ${tier.range} - see them with \`/levels messages\`.` : `${tier.range} uses my built-in messages - there are none of yours to remove.`);
+      }
+      messages.splice(number - 1, 1);
+    }
+    data.messages[tier.key] = messages;
     store.save();
-    return reply(`Level-up text: ${data.message ?? DEFAULT_LEVEL_UP}`);
+    console.log(`/levels: ${by} ran ${sub} for ${tier.key} (${messages.length} messages now).`);
+    return replyCard(`${sub === 'add-message' ? '✅ Added!' : '🗑️ Removed!'} I pick one of these at random:`, messageList(data, tier));
+  }
+  if (sub === 'messages') {
+    return replyCard('### 🎉 Level-up messages\nEach level-up picks one at random from its group.', ...TIERS.map((tier) => messageList(data, tier)));
+  }
+  if (sub === 'test') {
+    const level = interaction.options.getInteger('level', true);
+    const tier = tierFor(level);
+    return reply(`${fillLevelUp(pickLevelUp(data, level), interaction.user.id, level)}\n-# Preview from the ${tier.emoji} ${tier.range} group - only you can see this.`);
   }
   if (sub === 'reward') {
     const level = interaction.options.getInteger('level', true);
@@ -226,7 +344,7 @@ async function configure(interaction) {
     [
       `**Leveling:** ${access.isEnabled(interaction.guildId, 'leveling') ? 'on' : 'off'}`,
       `**Level-ups announced in:** ${data.channelId ? `<#${data.channelId}>` : 'wherever the member is chatting'}`,
-      `**Level-up text:** ${data.message ?? DEFAULT_LEVEL_UP}`,
+      `**Level-up messages** (picked at random): ${TIERS.map((t) => `${t.range}: ${data.messages[t.key]?.length ? `${data.messages[t.key].length} of yours` : 'built-in'}`).join(' · ')}`,
       `**Role rewards:** ${rewards.length ? rewards.join(', ') : 'none'}`,
       `**Members with XP:** ${ranked(data).length}`,
     ].join('\n')
@@ -257,4 +375,5 @@ module.exports = {
   setAnnounceChannel,
   // For tests.
   levelFromXp,
+  DEFAULT_LEVEL_UPS,
 };

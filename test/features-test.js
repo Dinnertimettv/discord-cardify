@@ -753,8 +753,9 @@ function click(message, customId, member = alex) {
     await run(command('levels', 'reward', { level: 2, role: 'r-artist' }));
     for (let n = 0; n < 20; n++) await say();
     const ups = chat.map((p) => p.content);
-    if (!ups[0]?.startsWith('🎉 <@u-chatter> reached **level 1**')) return ups.join(' | ');
-    if (!ups.some((t) => t.includes('level 2'))) return ups.join(' | ');
+    const rookies = leveling.DEFAULT_LEVEL_UPS.rookie.map((t) => t.replaceAll('{user}', '<@u-chatter>').replaceAll('{level}', '1'));
+    if (!rookies.includes(ups[0])) return ups.join(' | ');
+    if (!ups.some((t) => t.includes('**level 2**'))) return ups.join(' | ');
     return chatter.log.join() === '+r-artist' && chat.every((p) => p.allowedMentions.users.join() === 'u-chatter') ? null : chatter.log.join();
   });
   await check('two messages within a minute -> only the first earns XP', async () => {
@@ -784,19 +785,41 @@ function click(message, customId, member = alex) {
     const text = textOf(json(payload));
     return text.includes('🥇 <@u-chatter> - level') && text.includes('🥈 <@u-fast>') && payload.allowedMentions.parse.length === 0 ? null : text;
   });
-  await check('/levels channel and message -> announced there with the custom text', async () => {
-    const levelChannel = { id: 'c-levels', sent: [], send: async (p) => levelChannel.sent.push(p) };
+  const levelChannel = { id: 'c-levels', sent: [], send: async (p) => levelChannel.sent.push(p) };
+  await check('/levels channel and add-message for levels 1-4 -> announced there with the custom text', async () => {
     guild.channels.cache.set('c-levels', levelChannel);
     await run(command('levels', 'channel', { channel: levelChannel }));
-    await run(command('levels', 'message', { text: 'GG {user}, you hit {level}!' }));
+    const text = textOf(json(answer(await run(command('levels', 'add-message', { for: 'rookie', text: 'GG {user}, you hit {level}!' })))));
     const newbie = makeMember('u-newbie');
     for (let n = 0; n < 7; n++) await say(newbie);
-    return levelChannel.sent[0]?.content === 'GG <@u-newbie>, you hit 1!' ? null : JSON.stringify(levelChannel.sent);
+    return levelChannel.sent[0]?.content === 'GG <@u-newbie>, you hit 1!' && text.includes('**1.** GG {user}') ? null : `${text} | ${JSON.stringify(levelChannel.sent)}`;
+  });
+  await check('level 5 and up -> the regulars\' built-in messages; levels 1-4 keep the custom one', async () => {
+    const regular = makeMember('u-regular');
+    const before = levelChannel.sent.length;
+    for (let n = 0; n < 80; n++) await say(regular);
+    const ups = levelChannel.sent.slice(before).map((p) => p.content);
+    const fill = (t, level) => t.replaceAll('{user}', '<@u-regular>').replaceAll('{level}', String(level));
+    const early = ups.slice(0, 4).join() === [1, 2, 3, 4].map((l) => `GG <@u-regular>, you hit ${l}!`).join();
+    const five = ups.find((t) => t.includes('**level 5**'));
+    return early && leveling.DEFAULT_LEVEL_UPS.regular.map((t) => fill(t, 5)).includes(five) ? null : ups.join(' | ');
+  });
+  await check('/levels messages -> every group; remove-message -> back to built-in', async () => {
+    const all = textOf(json(answer(await run(command('levels', 'messages')))));
+    const removed = textOf(json(answer(await run(command('levels', 'remove-message', { for: 'rookie', number: 1 })))));
+    const none = answer(await run(command('levels', 'remove-message', { for: 'rookie', number: 1 }))).content;
+    const groups = ['Levels 1-4', 'Levels 5-9', 'Levels 10-19', 'Level 20 and up'].every((g) => all.includes(g));
+    return groups && all.includes('**1.** GG {user}') && removed.includes('🗑️ Removed!') && removed.includes('built-in') && none.includes('built-in messages') ? null : `${all} | ${removed} | ${none}`;
+  });
+  await check('/levels test level:25 -> a legend message, only for the admin', async () => {
+    const reply = answer(await run(command('levels', 'test', { level: 25 })));
+    const legends = leveling.DEFAULT_LEVEL_UPS.legend.map((t) => t.replaceAll('{user}', '<@u-admin>').replaceAll('{level}', '25'));
+    return legends.includes(reply.content.split('\n')[0]) && reply.flags === MessageFlags.Ephemeral && reply.allowedMentions.parse.length === 0 ? null : reply.content;
   });
   await check('/levels reset -> their XP is gone; /levels status lists the settings', async () => {
     await run(command('levels', 'reset', { member: { id: 'u-chatter' } }));
     const text = answer(await run(command('levels', 'status'))).content;
-    return text.includes('**Leveling:** on') && text.includes('<#c-levels>') && text.includes('level 2 → <@&r-artist>') && text.includes('**Members with XP:** 2') ? null : text;
+    return text.includes('**Leveling:** on') && text.includes('<#c-levels>') && text.includes('level 2 → <@&r-artist>') && text.includes('Levels 1-4: built-in') && text.includes('**Members with XP:** 3') ? null : text;
   });
 
   console.log('\n----- music -----');
