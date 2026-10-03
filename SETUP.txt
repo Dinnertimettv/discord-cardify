@@ -194,6 +194,32 @@ that's normal until Part 5).
 
 
 ===========================================================================
+  PART 6 - SET UP YOUR SERVER  (once for each server)
+===========================================================================
+
+  1. In your Discord server, type   /setup   and press Enter.
+     (Only people who can manage the server can do this.)
+
+  2. Answer the questions by picking from the menus. Each answer is
+     saved right away. Press "Next" to go on, or "Back" to go back.
+     It asks you:
+        - which jobs the bot should do (link cards, music, levels...)
+        - where it should post (mod log, welcome, level-ups)
+        - which channels it should work in, and which to stay out of
+        - who can use music, levels and link cards
+        - which voice channels it can play music in
+
+  3. On the last page you'll see everything you picked, and some
+     commands to try next.
+
+  You can run /setup again any time to change things.
+
+  Want to see everything the bot can do?  Type   /help   or   !help
+  Want to choose exactly who can use each command, and where?
+  Type   /access   and pick from the list.
+
+
+===========================================================================
   TURNING IT OFF, CHECKING ON IT
 ===========================================================================
 
@@ -222,7 +248,9 @@ that's normal until Part 5).
   SETTINGS YOU CAN CHANGE IN DISCORD
 ===========================================================================
 
-Server admins can type  /embeds  in any channel:
+The easiest way:  /setup  (see Part 6). For everything else, type  /help .
+
+For link cards, server admins can also type  /embeds  in any channel:
 
   /embeds channel     turn the bot off (or back on) in the current channel
   /embeds language    choose the language posts get translated into

@@ -14,6 +14,7 @@ const {
 } = require('discord.js');
 const { createStore } = require('../store');
 const { roleProblem } = require('./roles');
+const access = require('./access');
 
 const store = createStore('welcome.json', { guilds: {} });
 
@@ -176,7 +177,7 @@ async function handleCommand(interaction) {
 
 async function memberJoined(member) {
   const settings = store.load().guilds[member.guild.id];
-  if (!settings) return;
+  if (!settings || !access.isEnabled(member.guild.id, 'welcome')) return;
   if (settings.autoroleId) {
     const problem = roleProblem(member.guild.roles.cache.get(settings.autoroleId), member.guild);
     if (problem) console.error(`Auto-role in "${member.guild.name}": ${problem.replace(/\*\*/g, '')}`);
@@ -187,7 +188,7 @@ async function memberJoined(member) {
 
 async function memberLeft(member) {
   const settings = store.load().guilds[member.guild.id];
-  if (!settings?.goodbye) return;
+  if (!settings?.goodbye || !access.isEnabled(member.guild.id, 'welcome')) return;
   await post(member.client, settings.goodbye.channelId, {
     flags: MessageFlags.IsComponentsV2,
     components: [card(fill(settings.goodbye.message ?? DEFAULT_GOODBYE, member), member, GOODBYE_COLOR)],
@@ -195,4 +196,13 @@ async function memberLeft(member) {
   }).catch((err) => console.error('Goodbye message failed:', err.message));
 }
 
-module.exports = { commands: [WELCOME_COMMAND], handleCommand, init, memberJoined, memberLeft };
+// For /setup: where welcome / goodbye messages go (null turns them off).
+const channelFor = (guildId, which) => store.load().guilds[guildId]?.[which]?.channelId ?? null;
+
+function setChannel(guildId, which, channelId) {
+  const settings = settingsFor(guildId);
+  settings[which] = channelId ? { channelId, message: settings[which]?.message ?? null } : null;
+  store.save();
+}
+
+module.exports = { commands: [WELCOME_COMMAND], handleCommand, init, memberJoined, memberLeft, channelFor, setChannel, membersIntentOn: () => membersIntentOn() };

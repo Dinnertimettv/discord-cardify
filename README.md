@@ -214,6 +214,31 @@ Every feature is set up with slash commands. The setup commands are hidden
 from members who lack the permission they need, and the bot checks that
 permission again each time.
 
+**New server? Run `/setup`.** It's a short step-by-step guide made of menus
+(pick an answer and it's saved right away): which features to turn on, where
+the bot posts (mod log, welcome, goodbye, level-ups), which channels it works
+in or stays quiet in, which roles can use music, levels and link cards, and
+which voice channels music can join.
+
+**`/help`** (or typing **`!help`**) shows a friendly guide: what each
+feature does, how to start, and every command and option - plus whether
+it's on, and who can use it, in this server.
+
+**`/access`** controls who can use what, and where, for a whole feature or
+a single command:
+
+- `/access feature` - turn a feature on or off
+- `/access add-role` / `remove-role` - only some roles can use it
+- `/access add-channel` / `remove-channel` - it only works in some channels
+- `/access quiet-channel` - the bot ignores a channel completely (no link
+  cards, no XP, no commands)
+- `/access reset` and `/access view`
+
+People with Manage Server can always use every command (channel limits
+still count for them), and `/help`, `/setup` and `/access` always work, so
+nobody gets locked out. Role and channel limits on link cards and levels
+decide whose links get cards and who earns XP.
+
 | Command | Who | What it does |
 |---|---|---|
 | `/roles` | Manage Roles | Role panels: members pick roles with **buttons**, a **dropdown**, or **emoji reactions** (optionally one at a time). Never hands out moderator-level roles, bot roles, or roles above the bot's own. |
@@ -225,7 +250,9 @@ permission again each time.
 | `/welcome` | Manage Server | Welcome and goodbye messages, and a role every new member gets. |
 | `/rank`, `/leaderboard`, `/levels` | everyone / Manage Server | Leveling: XP for chatting (once a minute), level-up messages, and roles as rewards. Off until `/levels on`. |
 | `/play`, `/radio`, `/music` | everyone | A music player for voice channels: uploaded files, direct audio links, internet radio (searchable), and the sound of X / TikTok / Instagram / Twitch clips. Queue, skip, pause, volume, loop, shuffle, plus buttons on the "Now playing" card. YouTube and Spotify aren't supported. |
-| `/music-setup` | Manage Server | A DJ role, a music-only channel, the starting volume, the queue limit, and 24/7 mode. |
+| `/music-setup` | Manage Server | A DJ role, which voice channels music can join, the starting volume, the queue limit, and 24/7 mode. |
+| `/setup`, `/access` | Manage Server | The setup guide, and who can use what, and where (see above). |
+| `/help`, `!help` | everyone | What every feature and command does. |
 
 Settings are saved in the `data/` folder. Welcome messages, auto-roles, and
 join/leave logs need the **Server Members Intent** (below); the bot checks

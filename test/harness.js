@@ -18,11 +18,14 @@ const os = require('os');
 process.env.BOT_SETTINGS_FILE = path.join(os.tmpdir(), `bot-test-settings-${process.pid}.json`);
 fs.writeFileSync(process.env.BOT_SETTINGS_FILE, JSON.stringify({ guilds: { g1: { postAsSharer: false } } }));
 process.env.BOT_FLAGGED_FILE = path.join(os.tmpdir(), `bot-test-flagged-${process.pid}.json`);
+// Feature settings (access rules and the rest) go in a throwaway folder too.
+process.env.BOT_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'bot-harness-data-'));
 // The bot works in g1 and g2 only (it's also in g3 at startup, which it should leave).
 process.env.ALLOWED_GUILD_IDS = ' g1, g2 ';
 process.on('exit', () => {
   fs.rmSync(process.env.BOT_SETTINGS_FILE, { force: true });
   fs.rmSync(process.env.BOT_FLAGGED_FILE, { force: true });
+  fs.rmSync(process.env.BOT_DATA_DIR, { recursive: true, force: true });
 });
 discord.Client.prototype.login = async () => 'stubbed';
 const handlers = {};
@@ -345,7 +348,7 @@ function fakeInteraction(customId, sent, { userId = '222222222222222222', isMod 
     message, deferred: false, replied: false, isButton: () => true,
     deferReply: async (o) => { i.deferred = true; log.push(`deferReply(flags=${o?.flags})`); },
     deferUpdate: async () => { i.deferred = true; log.push('deferUpdate'); },
-    isChatInputCommand: () => false, isStringSelectMenu: () => false, isAutocomplete: () => false,
+    isChatInputCommand: () => false, isStringSelectMenu: () => false, isAutocomplete: () => false, isMessageComponent: () => true,
     editReply: async (p) => log.push(['editReply', validate(p)]),
     reply: async (p) => { i.replied = true; log.push(['reply', validate(p)]); },
     followUp: async (p) => log.push(['followUp', validate(p)]),
@@ -788,7 +791,7 @@ async function click(label, customId, sent, opts, check) {
     const i = {
       commandName: 'embeds', guildId: 'g1', channelId: 'c1', channel: { isThread: () => false },
       memberPermissions: { has: () => canManage }, user: { id: '333333333333333333', tag: 'admin#0001' }, guild: { name: 'Server One' },
-      isChatInputCommand: () => true, isButton: () => false, deferred: false, replied: false,
+      isChatInputCommand: () => true, isMessageComponent: () => false, isButton: () => false, deferred: false, replied: false,
       options: { getSubcommand: () => subcommand, getBoolean: (n) => options[n], getString: (n) => options[n] },
       reply: async (p) => { i.replied = true; log.push(p); },
     };
@@ -1037,6 +1040,20 @@ async function click(label, customId, sent, opts, check) {
   await run('some other bot/webhook', 'https://www.tiktok.com/@w/video/9', { bot: true, webhookId: '666' }, (out) => (out.length ? 'should ignore other bots' : null));
   await run('no supported links', 'hello https://example.com');
   await archiveCheck('unsupported link -> nothing archived', () => (count() === n ? null : 'archived something'));
+
+  // !help, quiet channels and switched-off features, through the real message handler.
+  const access = require(path.join(BOT_DIR, 'features/access'));
+  await run('!help -> the help card, as a reply', '!help', {}, (out) =>
+    out.length === 1 && out[0].isReply && out[0].isCard && out[0].components[0].components.some((c) => c.content?.includes("I'm Cardify")) ? null : 'no help card');
+  access.setIgnored('g1', ['c-quiet']);
+  await run('quiet channel -> links and !help left alone', 'https://www.tiktok.com/@q/video/10', { channelId: 'c-quiet' }, (out) => (out.length ? 'answered in a quiet channel' : null));
+  await run('quiet channel -> !help ignored too', '!help', { channelId: 'c-quiet' }, (out) => (out.length ? 'answered in a quiet channel' : null));
+  await run('thread in a quiet channel -> left alone', 'https://www.tiktok.com/@q/video/11', { channelId: 't9', parentId: 'c-quiet', channelType: discord.ChannelType.PublicThread }, (out) => (out.length ? 'answered in a quiet thread' : null));
+  access.setIgnored('g1', []);
+  access.setEnabled('g1', 'links', false);
+  await run('link cards turned off with /access -> links left alone', 'https://www.tiktok.com/@q/video/12', {}, (out) => (out.length ? 'fixed with link cards off' : null));
+  access.setEnabled('g1', 'links', true);
+  await run('link cards back on -> fixed again', 'https://www.tiktok.com/@q/video/13', {}, (out) => (out.length ? null : 'not fixed'));
 
   console.log(`\n${failures ? `${failures} FAILURE(S)` : 'ALL PASSED'}`);
   process.exit(failures ? 1 : 0);

@@ -25,7 +25,8 @@ const { createStore } = require('../store');
 const store = createStore('music.json', { guilds: {} });
 
 const MUSIC_COLOR = 0x9b59b6;
-const DEFAULTS = { djRoleId: null, channelId: null, volume: 60, maxQueue: 100, stay: false };
+// voiceChannels: the voice channels music may join (empty: any).
+const DEFAULTS = { djRoleId: null, voiceChannels: [], volume: 60, maxQueue: 100, stay: false };
 const MAX_VOLUME = 150;
 // Leave the voice channel this long after the queue runs out, or after everyone else leaves.
 const IDLE_LEAVE_MS = 3 * 60_000;
@@ -101,9 +102,10 @@ const SETUP_COMMAND = new SlashCommandBuilder()
   )
   .addSubcommand((s) =>
     s
-      .setName('channel')
-      .setDescription('Only allow music commands in one channel (empty: any channel)')
-      .addChannelOption((o) => o.setName('channel').setDescription('The channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice))
+      .setName('voice-channel')
+      .setDescription('Choose which voice channels I can play music in (with none chosen: any)')
+      .addChannelOption((o) => o.setName('channel').setDescription('A voice channel').setRequired(true).addChannelTypes(ChannelType.GuildVoice))
+      .addBooleanOption((o) => o.setName('allowed').setDescription('Can I play music there?').setRequired(true))
   )
   .addSubcommand((s) =>
     s
@@ -203,6 +205,7 @@ function init(deps) {
 function settingsFor(guildId) {
   const guilds = store.load().guilds;
   guilds[guildId] = { ...DEFAULTS, ...guilds[guildId] };
+  guilds[guildId].voiceChannels = [...guilds[guildId].voiceChannels];
   return guilds[guildId];
 }
 
@@ -541,11 +544,6 @@ function formatDuration(seconds) {
 // Who may do what
 // ---------------------------------------------------------------------------
 
-function channelProblem(interaction) {
-  const { channelId } = settingsFor(interaction.guildId);
-  return channelId && interaction.channelId !== channelId ? `Music commands go in <#${channelId}>.` : null;
-}
-
 // Admins can always; otherwise you have to be listening, and with a DJ role
 // set you need it - unless it's your own song or nobody else is listening.
 function controlProblem(interaction, session, { ownTrack = false } = {}) {
@@ -566,10 +564,12 @@ const privately = (interaction, content) =>
 // ---------------------------------------------------------------------------
 
 async function queueTrack(interaction, findTrack) {
-  const problem = channelProblem(interaction);
-  if (problem) return privately(interaction, problem);
   const voiceChannel = interaction.member?.voice?.channel;
   if (!voiceChannel) return privately(interaction, 'Join a voice channel first, then I\'ll play there.');
+  const { voiceChannels } = settingsFor(interaction.guildId);
+  if (voiceChannels.length && !voiceChannels.includes(voiceChannel.id)) {
+    return privately(interaction, `I can only play music in ${voiceChannels.map((id) => `<#${id}>`).join(', ')}. Join one of those first.`);
+  }
   let session = sessions.get(interaction.guildId);
   if (session && session.voiceChannelId !== voiceChannel.id && session.current) {
     return privately(interaction, `I'm already playing in <#${session.voiceChannelId}> - join that channel to add songs.`);
@@ -739,8 +739,6 @@ const ACTIONS = {
 };
 
 async function musicCommand(interaction) {
-  const problem = channelProblem(interaction);
-  if (problem) return privately(interaction, problem);
   const session = sessions.get(interaction.guildId);
   if (!session) return privately(interaction, "I'm not playing anything - start with `/play` or `/radio`.");
   const result = ACTIONS[interaction.options.getSubcommand()](session, interaction);
@@ -780,9 +778,13 @@ async function setup(interaction) {
     text = settings.djRoleId
       ? `Only <@&${settings.djRoleId}> (and admins) can skip others' songs, stop, pause, or change the volume while others are listening. Everyone can still add songs.`
       : 'Everyone listening can control the music.';
-  } else if (sub === 'channel') {
-    settings.channelId = interaction.options.getChannel('channel')?.id ?? null;
-    text = settings.channelId ? `Music commands now only work in <#${settings.channelId}>.` : 'Music commands work in any channel.';
+  } else if (sub === 'voice-channel') {
+    const channelId = interaction.options.getChannel('channel', true).id;
+    const allowed = interaction.options.getBoolean('allowed', true);
+    settings.voiceChannels = allowed ? [...new Set([...settings.voiceChannels, channelId])] : settings.voiceChannels.filter((id) => id !== channelId);
+    text = settings.voiceChannels.length
+      ? `I can play music in: ${settings.voiceChannels.map((id) => `<#${id}>`).join(', ')}.`
+      : 'I can play music in any voice channel.';
   } else if (sub === 'volume') {
     settings.volume = interaction.options.getInteger('percent', true);
     text = `The music starts at ${settings.volume}% volume.`;
@@ -802,7 +804,8 @@ async function setup(interaction) {
     return reply(
       [
         `**DJ role:** ${settings.djRoleId ? `<@&${settings.djRoleId}>` : 'none - everyone listening can control the music'}`,
-        `**Music commands in:** ${settings.channelId ? `<#${settings.channelId}>` : 'any channel'}`,
+        `**Voice channels:** ${settings.voiceChannels.length ? settings.voiceChannels.map((id) => `<#${id}>`).join(', ') : 'any'}`,
+        '-# Which text channels the music commands work in, and who can use them: `/access`',
         `**Starting volume:** ${settings.volume}%`,
         `**Queue limit:** ${settings.maxQueue} songs`,
         `**24/7:** ${settings.stay ? 'on' : 'off - I leave when the music ends or everyone leaves'}`,
@@ -858,6 +861,12 @@ function voiceStateChanged(before, after) {
   }
 }
 
+// For /setup.
+function setMusicSettings(guildId, changes) {
+  Object.assign(settingsFor(guildId), changes);
+  store.save();
+}
+
 module.exports = {
   commands: [PLAY_COMMAND, RADIO_COMMAND, MUSIC_COMMAND, SETUP_COMMAND],
   handleCommand,
@@ -865,6 +874,8 @@ module.exports = {
   handleButton,
   voiceStateChanged,
   init,
+  musicSettings: (guildId) => settingsFor(guildId),
+  setMusicSettings,
   // For tests.
   engine,
   sessions,

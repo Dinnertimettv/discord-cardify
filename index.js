@@ -16,7 +16,13 @@ const automod = require('./features/automod');
 const welcome = require('./features/welcome');
 const leveling = require('./features/leveling');
 const music = require('./features/music');
-const FEATURES = [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music];
+const help = require('./features/help');
+const setup = require('./features/setup');
+// Who can use what, and where (/access, /setup).
+const access = require('./features/access');
+const FEATURES = [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, help, setup];
+// Buttons and menus that belong to a feature follow its /access rules too.
+const COMPONENT_FEATURES = { role: 'roles', 'role-menu': 'roles', music: 'music' };
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -1273,9 +1279,15 @@ client.on(Events.MessageCreate, async (message) => {
   const isTestPost = Boolean(TEST_WEBHOOK_ID) && message.webhookId === TEST_WEBHOOK_ID;
   if (message.author.bot && !isTestPost) return;
   if (message.guildId && !isAllowedServer(message.guildId)) return;
-  // XP counts in every channel, even ones with link fixing off.
+  // Quiet channels (/access quiet-channel): no help, no XP, no link cards.
+  if (message.inGuild() && access.isIgnoredChannel(message.guildId, message.channel, message.channelId)) return;
+  if (help.isTextHelp(message.content)) {
+    await help.handleText(message).catch((err) => console.error('!help failed:', err));
+    return;
+  }
+  // XP counts even in channels with link fixing off (leveling has its own /access rules).
   leveling.onMessage(message).catch((err) => console.error('Leveling failed:', err));
-  if (message.inGuild() && isLinkFixingOff(message)) return;
+  if (message.inGuild() && (isLinkFixingOff(message) || !access.allowsMessage(message, 'links'))) return;
   try {
     await handleMessage(message);
   } catch (err) {
@@ -1846,6 +1858,30 @@ const BUTTON_HANDLERS = {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.guildId && !isAllowedServer(interaction.guildId)) return;
+  // Switched-off features, quiet channels, and /access role and channel limits.
+  if (interaction.isChatInputCommand()) {
+    const problem = access.commandProblem(interaction);
+    if (problem) {
+      await interaction.reply({ content: problem, flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } }).catch(() => {});
+      return;
+    }
+  }
+  if (interaction.isMessageComponent()) {
+    const prefix = interaction.customId.split(':')[0];
+    if (prefix === 'help' || prefix === 'setup' || prefix === 'access') {
+      await (prefix === 'help' ? help : setup).handleComponent(interaction).catch(async (err) => {
+        console.error(`${interaction.customId} failed:`, err);
+        await replyPrivately(interaction, 'Something went wrong - try again in a moment.').catch(() => {});
+      });
+      return;
+    }
+    const feature = COMPONENT_FEATURES[prefix];
+    const problem = feature && access.componentProblem(interaction, feature);
+    if (problem) {
+      await interaction.reply({ content: problem, flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } }).catch(() => {});
+      return;
+    }
+  }
   if (interaction.isChatInputCommand() && interaction.commandName === EMBEDS_COMMAND.name) {
     try {
       await handleEmbedsCommand(interaction);
@@ -2514,7 +2550,9 @@ client.once(Events.ClientReady, async (readyClient) => {
   await leaveUnlistedServers();
   if (TEST_WEBHOOK_ID) console.log('Test webhook posts (test/live.js) are handled like normal messages.');
   // Global command, so it shows up in every server the bot is in.
-  await client.application?.commands.set([EMBEDS_COMMAND, ...FEATURES.flatMap((feature) => feature.commands)]).catch((err) => {
+  const allCommands = [EMBEDS_COMMAND, ...FEATURES.flatMap((feature) => feature.commands)];
+  help.init({ commands: allCommands });
+  await client.application?.commands.set(allCommands).catch((err) => {
     console.error(
       "Couldn't register the /embeds command (the bot may need re-inviting with the applications.commands scope):",
       err.message
@@ -2549,7 +2587,8 @@ for (const [event, added] of [
   [Events.MessageReactionRemove, false],
 ]) {
   client.on(event, (reaction, user) => {
-    if (!isAllowedServer(reaction.message.guildId)) return;
+    const { guildId, channel, channelId } = reaction.message;
+    if (!isAllowedServer(guildId) || !access.isEnabled(guildId, 'roles') || access.isIgnoredChannel(guildId, channel, channelId)) return;
     roles.handleReaction(reaction, user, added).catch((err) => console.error('Role panel reaction failed:', err));
   });
 }

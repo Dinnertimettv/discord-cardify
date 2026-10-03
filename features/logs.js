@@ -11,6 +11,7 @@ const {
   TextDisplayBuilder,
 } = require('discord.js');
 const { createStore } = require('../store');
+const access = require('./access');
 
 const store = createStore('logs.json', { channels: {} });
 
@@ -60,7 +61,7 @@ function logChannelId(guildId) {
 // Posts one entry in the server's mod log, if it has one.
 async function log(guildId, kind, text) {
   const channelId = logChannelId(guildId);
-  if (!channelId || !client) return;
+  if (!channelId || !client || !access.isEnabled(guildId, 'logs')) return;
   const channel = await client.channels.fetch(channelId).catch(() => null);
   if (!channel) return;
   await channel
@@ -150,12 +151,20 @@ function memberUnbanned(ban) {
   return log(ban.guild.id, 'mod', `🕊️ <@${ban.user.id}> (${ban.user.tag}) **was unbanned**`);
 }
 
+// For /setup.
+function setLogChannel(guildId, channelId) {
+  if (channelId) store.load().channels[guildId] = channelId;
+  else delete store.load().channels[guildId];
+  store.save();
+}
+
 module.exports = {
   commands: [LOGS_COMMAND],
   handleCommand,
   init,
   log,
   logChannelId,
+  setLogChannel,
   ignoreDeletion,
   messageDeleted,
   messageEdited,

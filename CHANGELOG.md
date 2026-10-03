@@ -99,10 +99,40 @@ Cardify grows from a link bot into an all-in-one server bot.
 - Pauses when everyone leaves the voice channel and leaves after 2
   minutes; leaves 3 minutes after the queue runs out.
 - `/music-setup` (Manage Server): a DJ role (only DJs can skip others'
-  songs, stop, or change the volume while others are listening), a
-  music-only channel, the starting volume, the queue limit, and 24/7 mode.
+  songs, stop, or change the volume while others are listening), which
+  voice channels music can join, the starting volume, the queue limit, and
+  24/7 mode.
 - Links are only played from the public internet, never this PC's own
   network, and the audio player can't open local files.
+
+**Setup guide** (`/setup`, needs Manage Server)
+- A step-by-step guide made of menus, written so anyone can follow it:
+  pick which features to turn on, where Cardify posts (mod log, welcome,
+  goodbye, level-ups), where it works and where it stays quiet, who can
+  use music, levels and link cards (and who the DJs are), and which voice
+  channels music can join. Every pick is saved right away; the last page
+  sums it all up and suggests what to try next.
+
+**Help** (`/help`, or type `!help`)
+- A home page with every feature, a page per feature (what it does, how
+  to start, its commands and who can use them) and a page per command
+  with every option. Each page shows whether the feature is on in this
+  server and any limits on it. Pick topics and commands from menus.
+- `!help music`, `!help play`, `/help topic:...` jump straight to a page.
+  On a public `!help` message, the menus answer just the person clicking.
+
+**Who can use what** (`/access`, needs Manage Server)
+- Turn any feature on or off, and limit a whole feature or a single
+  command to some roles and/or some channels. `/access quiet-channel`
+  makes Cardify ignore a channel completely. `/access view` shows every
+  rule and everywhere Cardify posts.
+- Limits apply to slash commands, role panels and the music card's
+  buttons; on link cards and levels they decide whose links get cards and
+  who earns XP. Admins can't lock themselves out: Manage Server skips role
+  limits, and `/help`, `/setup` and `/access` always work.
+- A feature that's turned off does nothing on its own (no alerts, logs,
+  welcomes, XP or link cards) - except Discord's own AutoMod rules, which
+  keep running until they're turned off with `/automod`.
 
 ### Permissions
 

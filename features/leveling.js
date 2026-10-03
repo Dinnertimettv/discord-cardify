@@ -15,6 +15,7 @@ const {
 } = require('discord.js');
 const { createStore } = require('../store');
 const { roleProblem } = require('./roles');
+const access = require('./access');
 
 const store = createStore('levels.json', { guilds: {} });
 
@@ -86,7 +87,7 @@ function levelFromXp(xp) {
 
 function guildData(guildId) {
   const guilds = store.load().guilds;
-  guilds[guildId] ??= { enabled: false, channelId: null, message: null, rewards: {}, users: {} };
+  guilds[guildId] ??= { channelId: null, message: null, rewards: {}, users: {} };
   return guilds[guildId];
 }
 
@@ -101,8 +102,9 @@ function progressBar(into, needed) {
 
 async function onMessage(message, now = Date.now()) {
   if (!message.guildId || message.author.bot || message.webhookId || !message.member) return;
+  // Off, an ignored channel, or a channel / role that /access leaves out.
+  if (!access.allowsMessage(message, 'leveling')) return;
   const data = guildData(message.guildId);
-  if (!data.enabled) return;
   const user = (data.users[message.author.id] ??= { xp: 0, lastAt: 0 });
   if (now - user.lastAt < XP_COOLDOWN_MS) return;
   const before = levelFromXp(user.xp).level;
@@ -140,7 +142,7 @@ function ranked(data) {
 
 async function showRank(interaction) {
   const data = guildData(interaction.guildId);
-  if (!data.enabled) return interaction.reply({ content: "Leveling isn't on in this server.", flags: MessageFlags.Ephemeral });
+  if (!access.isEnabled(interaction.guildId, 'leveling')) return interaction.reply({ content: "Leveling isn't on in this server.", flags: MessageFlags.Ephemeral });
   const target = interaction.options.getUser('member') ?? interaction.user;
   const xp = data.users[target.id]?.xp ?? 0;
   const { level, into, needed } = levelFromXp(xp);
@@ -160,7 +162,7 @@ async function showRank(interaction) {
 
 async function showLeaderboard(interaction) {
   const data = guildData(interaction.guildId);
-  if (!data.enabled) return interaction.reply({ content: "Leveling isn't on in this server.", flags: MessageFlags.Ephemeral });
+  if (!access.isEnabled(interaction.guildId, 'leveling')) return interaction.reply({ content: "Leveling isn't on in this server.", flags: MessageFlags.Ephemeral });
   const top = ranked(data).slice(0, 10);
   if (top.length === 0) return interaction.reply({ content: 'Nobody has any XP yet - start chatting!', flags: MessageFlags.Ephemeral });
   const medals = ['🥇', '🥈', '🥉'];
@@ -178,10 +180,10 @@ async function configure(interaction) {
   const sub = interaction.options.getSubcommand();
   const by = `${interaction.user.tag} (${interaction.user.id})`;
   if (sub === 'on') {
-    data.enabled = interaction.options.getBoolean('on', true);
-    store.save();
-    console.log(`/levels: ${by} turned leveling ${data.enabled ? 'on' : 'off'}.`);
-    return reply(data.enabled ? 'Leveling is on - members earn XP for chatting. See it with `/rank` and `/leaderboard`.' : 'Leveling is off. Everyone keeps their XP for when it comes back on.');
+    const on = interaction.options.getBoolean('on', true);
+    access.setEnabled(interaction.guildId, 'leveling', on);
+    console.log(`/levels: ${by} turned leveling ${on ? 'on' : 'off'}.`);
+    return reply(on ? 'Leveling is on - members earn XP for chatting. See it with `/rank` and `/leaderboard`.' : 'Leveling is off. Everyone keeps their XP for when it comes back on.');
   }
   if (sub === 'channel') {
     const picked = interaction.options.getChannel('channel');
@@ -222,7 +224,7 @@ async function configure(interaction) {
     .map(([level, roleId]) => `level ${level} → <@&${roleId}>`);
   return reply(
     [
-      `**Leveling:** ${data.enabled ? 'on' : 'off'}`,
+      `**Leveling:** ${access.isEnabled(interaction.guildId, 'leveling') ? 'on' : 'off'}`,
       `**Level-ups announced in:** ${data.channelId ? `<#${data.channelId}>` : 'wherever the member is chatting'}`,
       `**Level-up text:** ${data.message ?? DEFAULT_LEVEL_UP}`,
       `**Role rewards:** ${rewards.length ? rewards.join(', ') : 'none'}`,
@@ -239,10 +241,20 @@ async function handleCommand(interaction) {
   return true;
 }
 
+// Where level-ups are announced (null: wherever the member is chatting) - for /setup.
+const announceChannel = (guildId) => store.load().guilds[guildId]?.channelId ?? null;
+
+function setAnnounceChannel(guildId, channelId) {
+  guildData(guildId).channelId = channelId ?? null;
+  store.save();
+}
+
 module.exports = {
   commands: [RANK_COMMAND, LEADERBOARD_COMMAND, LEVELS_COMMAND],
   handleCommand,
   onMessage,
+  announceChannel,
+  setAnnounceChannel,
   // For tests.
   levelFromXp,
 };

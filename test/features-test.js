@@ -17,6 +17,9 @@ const automod = require('../features/automod');
 const welcome = require('../features/welcome');
 const leveling = require('../features/leveling');
 const music = require('../features/music');
+const access = require('../features/access');
+const help = require('../features/help');
+const setup = require('../features/setup');
 
 const { PermissionFlagsBits, PermissionsBitField, ComponentType, MessageFlags } = discord;
 let failures = 0;
@@ -120,7 +123,7 @@ function command(name, sub, options = {}, { canManage = true, permission } = {})
 }
 const answer = (interaction) => interaction.log.findLast((l) => ['reply', 'editReply', 'followUp'].includes(l[0]))?.[1];
 const run = async (interaction) => {
-  for (const feature of [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music]) if (await feature.handleCommand(interaction)) return interaction;
+  for (const feature of [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, help, setup]) if (await feature.handleCommand(interaction)) return interaction;
   throw new Error(`no feature handled /${interaction.commandName}`);
 };
 
@@ -985,23 +988,297 @@ function click(message, customId, member = alex) {
       ? null
       : `${text} | ${JSON.stringify(suggestions)}`;
   });
-  await check('/music-setup channel and queue-limit -> enforced; status lists everything', async () => {
+  await check('/music-setup voice-channel and queue-limit -> enforced; status lists everything', async () => {
     await run(musicCommand('music-setup', 'queue-limit', { songs: 1 }));
     await run(musicCommand('play', null, { link: 'https://music.example/My_Song.mp3' }));
     const full = replyText(await run(musicCommand('play', null, { link: 'https://music.example/My_Song.mp3' })));
     if (!full.includes('queue is full (1 songs)')) return full;
-    await run(musicCommand('music-setup', 'channel', { channel: { id: 'c-music' } }));
-    const elsewhere = replyText(await run(musicCommand('music', 'queue')));
-    if (!elsewhere.includes('Music commands go in <#c-music>')) return elsewhere;
-    await run(musicCommand('music-setup', 'channel', {}));
+    const limited = replyText(await run(musicCommand('music-setup', 'voice-channel', { channel: { id: 'v2' }, allowed: true })));
+    const elsewhere = replyText(await run(musicCommand('play', null, { link: 'https://music.example/My_Song.mp3' })));
+    if (!limited.includes('I can play music in: <#v2>') || !elsewhere.includes('I can only play music in <#v2>')) return `${limited} | ${elsewhere}`;
+    await run(musicCommand('music-setup', 'voice-channel', { channel: { id: 'v2' }, allowed: false }));
     const status = replyText(await run(musicCommand('music-setup', 'status')));
-    return status.includes('**DJ role:** <@&r-artist>') && status.includes('**Queue limit:** 1 songs') && status.includes('in <#v1>, playing [Chill Beats FM]') ? null : status;
+    return status.includes('**DJ role:** <@&r-artist>') && status.includes('**Queue limit:** 1 songs') && status.includes('**Voice channels:** any') && status.includes('in <#v1>, playing [Chill Beats FM]') ? null : status;
   });
   await check('/music stop -> leaves, clears everything, the card loses its buttons', async () => {
     const card = session().nowPlaying.message;
     const text = replyText(await run(musicCommand('music', 'stop')));
     const after = replyText(await run(musicCommand('music', 'queue')));
     return text.includes('stopped the music') && !music.sessions.has('g1') && buttonIds(card.payload).length === 0 && after.includes("I'm not playing anything") ? null : `${text} | ${after}`;
+  });
+
+  console.log('\n----- /access -----');
+  const asMember = (name, { roleIds = [], canManage = false, channelId = 'c1', channelObj } = {}) => {
+    const i = command(name, null, {}, { canManage });
+    i.member = { roles: { cache: new Map(roleIds.map((id) => [id, {}])) } };
+    i.channelId = channelId;
+    i.channel = channelObj ?? { id: channelId, isThread: () => false };
+    return i;
+  };
+  await check('a new server: every feature on except Levels; nothing blocked', async () => {
+    const offByDefault = access.FEATURES.filter((f) => !access.isEnabled('g-new', f.key)).map((f) => f.key).join();
+    return offByDefault === 'leveling' && access.commandProblem(asMember('play')) === null ? null : offByDefault;
+  });
+  await check('/access without Manage Server -> refused', async () => {
+    const text = answer(await run(command('access', 'view', {}, { canManage: false }))).content;
+    return text.includes('Manage Server') ? null : text;
+  });
+  await check('/access add-role music @Artist -> only Artists (and admins) can use /play', async () => {
+    const text = answer(await run(command('access', 'add-role', { what: 'feature:music', role: 'r-artist' }))).content;
+    if (!text.startsWith('✅ Now only <@&r-artist> can use **🎵 Music**')) return text;
+    const without = access.commandProblem(asMember('play'));
+    const withRole = access.commandProblem(asMember('play', { roleIds: ['r-artist'] }));
+    const admin = access.commandProblem(asMember('play', { canManage: true }));
+    return without === 'Only <@&r-artist> can use **🎵 Music**.' && withRole === null && admin === null ? null : `${without} | ${withRole} | ${admin}`;
+  });
+  await check('/access add-channel /play #music -> /play only works there (and in its threads)', async () => {
+    const text = answer(await run(command('access', 'add-channel', { what: '/play', channel: { id: 'c-music' } }))).content;
+    if (!text.startsWith('✅ **/play** now only works in <#c-music>')) return text;
+    const elsewhere = access.commandProblem(asMember('play', { roleIds: ['r-artist'] }));
+    const there = access.commandProblem(asMember('play', { roleIds: ['r-artist'], channelId: 'c-music' }));
+    const thread = access.commandProblem(asMember('play', { roleIds: ['r-artist'], channelId: 't1', channelObj: { id: 't1', isThread: () => true, parentId: 'c-music' } }));
+    const radio = access.commandProblem(asMember('radio', { roleIds: ['r-artist'] }));
+    return elsewhere === 'You can use /play in <#c-music>.' && there === null && thread === null && radio === null ? null : `${elsewhere} | ${there} | ${thread} | ${radio}`;
+  });
+  await check('/access quiet-channel -> nothing works there except /help, /setup and /access', async () => {
+    const text = answer(await run(command('access', 'quiet-channel', { channel: { id: 'c-quiet' }, quiet: true }))).content;
+    const blocked = access.commandProblem(asMember('rank', { canManage: true, channelId: 'c-quiet' }));
+    const helpOk = access.commandProblem(asMember('help', { channelId: 'c-quiet' }));
+    const message = { guildId: 'g1', channelId: 'c-quiet', channel: { id: 'c-quiet' }, member: { roles: { cache: new Map() } } };
+    return text.startsWith("🙈 I'll stay quiet in <#c-quiet>") && blocked?.includes('switched off in this channel') && helpOk === null && !access.allowsMessage(message, 'links') ? null : `${text} | ${blocked}`;
+  });
+  await check('/access feature music off -> its commands stop, but /music-setup still works; on again', async () => {
+    const text = answer(await run(command('access', 'feature', { feature: 'music', on: false }))).content;
+    const play = access.commandProblem(asMember('play', { canManage: true, channelId: 'c-music' }));
+    const settings = access.commandProblem(asMember('music-setup', { canManage: true }));
+    await run(command('access', 'feature', { feature: 'music', on: true }));
+    return text.startsWith('⛔ 🎵 **Music** is off') && play?.includes('is turned off in this server') && settings === null && access.isEnabled('g1', 'music') ? null : `${text} | ${play} | ${settings}`;
+  });
+  await check('/access feature automod off -> explains the Discord rules keep running', async () => {
+    const text = answer(await run(command('access', 'feature', { feature: 'automod', on: false }))).content;
+    await run(command('access', 'feature', { feature: 'automod', on: true }));
+    return text.includes('run by Discord itself') ? null : text;
+  });
+  await check('/access add-role with @everyone, or an unknown thing -> explained', async () => {
+    const everyone = answer(await run(command('access', 'add-role', { what: 'music', role: 'g1' }))).content;
+    const unknown = answer(await run(command('access', 'add-role', { what: 'pizza', role: 'r-red' }))).content;
+    return everyone.includes('@everyone') && unknown.includes("I don't know that one") ? null : `${everyone} | ${unknown}`;
+  });
+  await check('link cards limited to a role -> other people\'s links are left alone', async () => {
+    await run(command('access', 'add-role', { what: 'links', role: 'r-red' }));
+    const message = (roles) => ({ guildId: 'g1', channelId: 'c1', channel: { id: 'c1' }, member: { roles: { cache: new Map(roles.map((r) => [r, {}])) } } });
+    const result = [access.allowsMessage(message([]), 'links'), access.allowsMessage(message(['r-red']), 'links')].join();
+    await run(command('access', 'reset', { what: 'links' }));
+    return result === 'false,true' && access.allowsMessage(message([]), 'links') ? null : result;
+  });
+  await check('/access remove-role and reset -> everyone again', async () => {
+    const removed = answer(await run(command('access', 'remove-role', { what: 'feature:music', role: 'r-artist' }))).content;
+    const reset = answer(await run(command('access', 'reset', { what: '/play' }))).content;
+    return removed === '✅ Everyone can use **🎵 Music** again.' && reset.includes('every channel again') && access.commandProblem(asMember('play')) === null ? null : `${removed} | ${reset}`;
+  });
+  await check('/access what suggestions -> features and commands, filtered by what you type', async () => {
+    const choices = [];
+    await setup.handleAutocomplete({ commandName: 'access', options: { getFocused: () => 'mus' }, respond: async (c) => choices.push(...c) });
+    return choices.map((c) => c.value).join() === 'feature:music,command:music,command:music-setup' ? null : JSON.stringify(choices);
+  });
+  await check('/access view -> every feature, the quiet channels, and where I post', async () => {
+    await run(command('access', 'add-role', { what: 'command:rank', role: 'r-gamer' }));
+    const payload = answer(await run(command('access', 'view')));
+    const text = textOf(json(payload));
+    const needed = ['**🙈 Quiet channels** (I ignore them): <#c-quiet>', '✅ ⭐ **Levels** - every channel · everyone', '↳ `/rank` - every channel · only <@&r-gamer>', '### 📣 Where I post', '📋 **Mod log:** <#c-modlog>'];
+    return needed.every((n) => text.includes(n)) && payload.flags & MessageFlags.Ephemeral ? null : text;
+  });
+
+  console.log('\n----- /help and !help -----');
+  const allCommands = [
+    new discord.SlashCommandBuilder().setName('embeds').setDescription('Settings for how this bot fixes shared links').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    ...[roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, help, setup].flatMap((f) => f.commands),
+  ];
+  help.init({ commands: allCommands });
+  const helpCommand = (topic) => command('help', null, topic ? { topic } : {}, { canManage: false });
+  const componentCount = (payload) => walk(json(payload).components).length;
+  await check('every command belongs to a help topic, and every topic has a guide', async () => {
+    const covered = new Set(help.TOPICS.flatMap((t) => t.commands));
+    const missing = allCommands.map((c) => c.name).filter((name) => !covered.has(name));
+    const noGuide = help.TOPICS.filter((t) => !help.GUIDES[t.key]).map((t) => t.key);
+    return missing.length || noGuide.length ? `missing: ${missing} / no guide: ${noGuide}` : null;
+  });
+  await check('/help -> a private home page with every topic, a topic menu, and setup buttons', async () => {
+    const payload = answer(await run(helpCommand()));
+    const text = textOf(json(payload));
+    const menu = walk(json(payload).components).find((c) => c.custom_id === 'help:topic');
+    const buttons = walk(json(payload).components).filter((c) => c.type === ComponentType.Button).map((c) => c.custom_id).join();
+    return text.includes("## 👋 Hi! I'm Cardify") && help.TOPICS.every((t) => text.includes(t.name)) && menu?.options.length === help.TOPICS.length && buttons === 'setup:start,access:view' && payload.flags & MessageFlags.Ephemeral
+      ? null
+      : `${buttons} ${text}`;
+  });
+  await check('/help topic:music -> what it is, how to start, every command with who can use it', async () => {
+    const text = textOf(json(answer(await run(helpCommand('music')))));
+    const needed = ['## 🎵 Music', '### 🚀 How to start', '**/play** `link?` `file?`', '› `volume` - Set the volume', '**/music-setup**', '🔒 Needs **Manage Server**', '👥 Everyone', '### 🏠 In this server'];
+    return needed.every((n) => text.includes(n)) ? null : text;
+  });
+  await check('/help topic:/mod -> every subcommand and option spelled out', async () => {
+    const text = textOf(json(answer(await run(helpCommand('/mod')))));
+    return text.includes('## 🛡️ /mod') && text.includes('**/mod ban**') && text.includes('`member`') && text.includes('*(optional)*') && text.includes('### 💡 Examples') ? null : text;
+  });
+  await check('/help with something unknown -> says so', async () => {
+    const text = answer(await run(helpCommand('pizza'))).content;
+    return text.includes("I don't know that one") ? null : text;
+  });
+  await check('every help page fits in one message (text and component limits)', async () => {
+    const views = [{}, ...help.TOPICS.map((t) => ({ topic: t.key })), ...allCommands.map((c) => ({ command: c.name }))];
+    const tooBig = views.filter((view) => {
+      const payload = help.page(view, { guildId: 'g1' });
+      return componentCount(payload) > 40 || textOf(json(payload)).length > 4000;
+    });
+    return tooBig.length ? JSON.stringify(tooBig) : null;
+  });
+  const helpClick = (customId, values = []) => {
+    const log = [];
+    const i = { customId, values, guildId: 'g1', guild, user: { id: 'u-fan' }, memberPermissions: { has: () => false }, log };
+    i.update = async (p) => log.push(['update', p]);
+    i.reply = async (p) => log.push(['reply', p]);
+    return i;
+  };
+  await check('picking a topic in /help -> the page changes in place', async () => {
+    const i = helpClick('help:topic', ['leveling']);
+    await help.handleComponent(i);
+    return i.log[0][0] === 'update' && textOf(json(i.log[0][1])).includes('## ⭐ Levels') ? null : JSON.stringify(i.log);
+  });
+  await check('picking a command, then Home -> command details, then the home page', async () => {
+    const pick = helpClick('help:cmd', ['music']);
+    await help.handleComponent(pick);
+    const home = helpClick('help:home');
+    await help.handleComponent(home);
+    const details = textOf(json(pick.log[0][1]));
+    return details.includes('**/music loop**') && details.includes('This song') && textOf(json(home.log[0][1])).includes("I'm Cardify") ? null : details;
+  });
+  await check('!help -> a public home page; picking a topic on it answers just you', async () => {
+    const replies = [];
+    const message = { content: '!help', guildId: 'g1', reply: async (p) => replies.push(p) };
+    if (!help.isTextHelp('!help') || !help.isTextHelp('!HELP music') || help.isTextHelp('!helpme') || help.isTextHelp('I need !help')) return 'isTextHelp wrong';
+    await help.handleText(message);
+    const ids = walk(json(replies[0]).components).map((c) => c.custom_id).filter(Boolean);
+    const click = helpClick('help:topic:pub', ['music']);
+    await help.handleComponent(click);
+    return !(replies[0].flags & MessageFlags.Ephemeral) && ids.includes('help:topic:pub') && click.log[0][0] === 'reply' && click.log[0][1].flags & MessageFlags.Ephemeral ? null : JSON.stringify(ids);
+  });
+  await check('!help play / !help pizza -> the /play page / "I don\'t know that one"', async () => {
+    const replies = [];
+    await help.handleText({ content: '!help play', guildId: 'g1', reply: async (p) => replies.push(p) });
+    await help.handleText({ content: '!help pizza', guildId: 'g1', reply: async (p) => replies.push(p) });
+    return textOf(json(replies[0])).includes('## 🎵 /play') && replies[1].content.includes("I don't know that one") ? null : JSON.stringify(replies);
+  });
+  await check('/help topic search -> topics and commands that match', async () => {
+    const choices = [];
+    await help.handleAutocomplete({ commandName: 'help', options: { getFocused: () => 'level' }, respond: async (c) => choices.push(...c) });
+    return choices.some((c) => c.value === 'leveling') && choices.some((c) => c.value === '/levels') ? null : JSON.stringify(choices);
+  });
+  await check('a help page shows this server\'s rules for it', async () => {
+    await run(command('access', 'add-channel', { what: 'leveling', channel: { id: 'c-levels' } }));
+    const text = textOf(json(help.page({ topic: 'leveling' }, { guildId: 'g1' })));
+    await run(command('access', 'reset', { what: 'leveling' }));
+    return text.includes('✅ on · only in <#c-levels> · for everyone') ? null : text;
+  });
+
+  console.log('\n----- /setup -----');
+  const setupClick = (customId, values = [], { canManage = true } = {}) => {
+    const log = [];
+    const i = { customId, values, guild, guildId: 'g1', channelId: 'c1', user: { id: 'u-admin', tag: 'admin#0001' }, memberPermissions: { has: () => canManage }, log };
+    i.update = async (p) => log.push(['update', p]);
+    i.reply = async (p) => log.push(['reply', p]);
+    return i;
+  };
+  const shown = async (customId, values) => {
+    const i = setupClick(customId, values);
+    await setup.handleComponent(i);
+    return json(i.log[0][1]);
+  };
+  const vcTwo = { id: 'v2', type: discord.ChannelType.GuildVoice };
+  guild.channels.cache.set('v2', vcTwo);
+  await check('/setup without Manage Server -> refused', async () => {
+    const text = answer(await run(command('setup', null, {}, { canManage: false }))).content;
+    return text.includes('Manage Server') ? null : text;
+  });
+  await check('/setup -> a private welcome page with the plan and a "Let\'s go!" button', async () => {
+    const payload = answer(await run(command('setup', null)));
+    const text = textOf(json(payload));
+    return text.includes("## 👋 Hi! Let's set up Cardify") && text.includes('5️⃣') && buttonIds(json(payload)).join() === 'setup:go:jobs' && payload.flags & MessageFlags.Ephemeral ? null : text;
+  });
+  await check('step 1: pick jobs -> saved right away, the checklist updates', async () => {
+    const before = await shown('setup:go:jobs');
+    const menu = walk(before.components).find((c) => c.custom_id === 'setup:set:jobs');
+    if (menu?.options.length !== 10 || menu.options.find((o) => o.value === 'music').default !== true) return JSON.stringify(menu);
+    const after = await shown('setup:set:jobs', ['links', 'roles', 'logs', 'welcome', 'leveling', 'music']);
+    const text = textOf(after);
+    const states = access.FEATURES.map((f) => `${f.key}:${access.isEnabled('g1', f.key) ? 1 : 0}`).join(' ');
+    return text.includes("✅ Saved! I'll do 6 jobs.") && text.includes('⬜ 🛡️ Moderation') && states === 'links:1 roles:1 expressions:0 alerts:0 moderation:0 automod:0 logs:1 welcome:1 leveling:1 music:1' ? null : `${states} ${text}`;
+  });
+  await check('step 2: pick where I post -> mod log, welcome, goodbye and level-up channels saved', async () => {
+    const page = await shown('setup:go:posting');
+    const ids = walk(page.components).map((c) => c.custom_id).filter(Boolean);
+    if (ids.slice(0, 4).join() !== 'setup:set:logs,setup:set:welcome,setup:set:goodbye,setup:set:levelups') return ids.join();
+    const logMenu = walk(page.components).find((c) => c.custom_id === 'setup:set:logs');
+    if (logMenu.default_values?.[0]?.id !== 'c-modlog') return JSON.stringify(logMenu);
+    await shown('setup:set:welcome', ['c-welcome']);
+    await shown('setup:set:goodbye', []);
+    const after = await shown('setup:set:levelups', ['c-levels']);
+    const text = textOf(after);
+    return welcome.channelFor('g1', 'welcome') === 'c-welcome' && welcome.channelFor('g1', 'goodbye') === null && leveling.announceChannel('g1') === 'c-levels' && text.includes("I can't post in <#c-levels> yet")
+      ? null
+      : text;
+  });
+  await check('step 3: pick where I work -> command channels, quiet channels and link channels saved', async () => {
+    await shown('setup:set:commands', ['c1', 'c-music']);
+    await shown('setup:set:quiet', ['c-quiet', 'c-rules']);
+    const after = await shown('setup:set:linkchannels', []);
+    const rule = access.ruleFor('g1', 'all');
+    return rule.channels.join() === 'c1,c-music' && access.ignoredChannels('g1').join() === 'c-quiet,c-rules' && access.ruleFor('g1', 'feature:links').channels.length === 0 && textOf(after).includes('every channel')
+      ? null
+      : textOf(after);
+  });
+  await check('step 4: pick who can use what -> music roles, DJ, level roles saved (@everyone means everyone)', async () => {
+    await shown('setup:set:musicroles', ['r-artist', 'g1']);
+    await shown('setup:set:dj', ['r-gamer']);
+    const after = await shown('setup:set:levelroles', []);
+    const ids = walk(after.components).map((c) => c.custom_id).filter(Boolean);
+    return access.ruleFor('g1', 'feature:music').roles.join() === 'r-artist' && music.musicSettings('g1').djRoleId === 'r-gamer' && access.ruleFor('g1', 'feature:leveling').roles.length === 0 && ids.includes('setup:set:linkroles')
+      ? null
+      : ids.join();
+  });
+  await check('step 5: pick music rooms and volume -> saved', async () => {
+    await shown('setup:set:voice', ['v1', 'v2']);
+    const after = await shown('setup:set:volume', ['75']);
+    const settings = music.musicSettings('g1');
+    return settings.voiceChannels.join() === 'v1,v2' && settings.volume === 75 && textOf(after).includes('Music starts at 75%') ? null : JSON.stringify(settings);
+  });
+  await check('the last page -> a summary of everything and what to try next', async () => {
+    const text = textOf(await shown('setup:go:done'));
+    const needed = ['## 🎉 All done!', '**✅ My jobs:** 🔗 Link cards, 🎭 Role panels, 📋 Mod log, 👋 Welcome messages, ⭐ Levels, 🎵 Music', '**⛔ Turned off:**', '👋 **Welcome:** <#c-welcome> · 🚪 **Goodbye:** not set', '⭐ **Level-ups:** <#c-levels>', 'I join <#v1>, <#v2>', '`/roles create`'];
+    return needed.every((n) => text.includes(n)) && !text.includes('/alerts twitch') ? null : text;
+  });
+  await check('every setup step fits in one message', async () => {
+    const tooBig = [];
+    for (const step of setup.STEPS) {
+      const payload = setup.stepPayload(step, guild, '✅ Saved!');
+      if (componentCount(payload) > 40 || textOf(json(payload)).length > 4000) tooBig.push(step);
+    }
+    return tooBig.length ? tooBig.join() : null;
+  });
+  await check('someone without Manage Server clicking setup -> refused; "Who can use what" hides where I post', async () => {
+    const i = setupClick('setup:go:jobs', [], { canManage: false });
+    await setup.handleComponent(i);
+    const view = setupClick('access:view', [], { canManage: false });
+    await setup.handleComponent(view);
+    const text = textOf(json(view.log[0][1]));
+    return i.log[0][1].content.includes('Only people who can manage the server') && text.includes('## 🔐 Who can use what') && !text.includes('Where I post') ? null : text;
+  });
+  await check('turning jobs off in /setup -> their commands stop', async () => {
+    const problem = access.commandProblem(asMember('mod', { canManage: true }));
+    await shown('setup:set:jobs', access.FEATURES.map((f) => f.key));
+    access.setRule('g1', 'all', { channels: [] });
+    access.setIgnored('g1', []);
+    return problem?.includes('Moderation** is turned off') ? null : problem;
   });
 
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL FEATURE TESTS PASSED');

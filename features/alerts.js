@@ -15,6 +15,7 @@ const {
   escapeMarkdown,
 } = require('discord.js');
 const { createStore } = require('../store');
+const access = require('./access');
 
 const store = createStore('alerts.json', { alerts: [] });
 
@@ -244,7 +245,7 @@ function alertText(alert, title) {
 }
 
 async function post(alert, components) {
-  if (!deps.isAllowedServer(alert.guildId)) return;
+  if (!deps.isAllowedServer(alert.guildId) || !access.isEnabled(alert.guildId, 'alerts')) return;
   const channel = await deps.client.channels.fetch(alert.channelId).catch(() => null);
   if (!channel) {
     console.error(`Alert for ${alert.target}: its channel ${alert.channelId} is gone.`);
@@ -315,6 +316,8 @@ module.exports = {
   commands: [ALERTS_COMMAND],
   handleCommand,
   init,
+  // For /setup and /access: a server's alerts.
+  alertsIn: (guildId) => alerts().filter((alert) => alert.guildId === guildId),
   // For tests.
   checkTwitch,
   checkYouTube,
