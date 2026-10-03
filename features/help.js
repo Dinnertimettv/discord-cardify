@@ -62,8 +62,13 @@ const GUIDES = {
     start: ['Make a private channel that only mods can see.', 'Then: `/logs set channel:#mod-log`'],
   },
   welcome: {
-    about: 'I say hi to new members with a card that shows their picture, and goodbye when someone leaves. I can give every new member a role, too.',
-    start: ['Pick a channel: `/welcome set channel:#welcome`', 'See how it looks: `/welcome test`', 'Give new members a role: `/welcome autorole role:@Member`'],
+    about: 'I say hi to new members with a card that shows their picture, and goodbye when someone leaves. Add a few welcome messages and I pick a different one each time! I can give every new member a role, too.',
+    start: [
+      'Pick a channel: `/welcome set channel:#welcome`',
+      'Add your own messages: `/welcome add-message message:Hi {user}, welcome in!`',
+      'See how it looks: `/welcome test`',
+      'Give new members a role: `/welcome autorole role:@Member`',
+    ],
   },
   leveling: {
     about: 'People earn XP when they chat (only once a minute, so spamming doesn\'t help). More XP means a higher level, and you can give roles as prizes!',

@@ -1,4 +1,6 @@
 // Welcome and goodbye messages, and a role new members get automatically.
+// Each welcome is picked at random from the server's own messages (or a
+// built-in set), so they don't all look the same.
 // Set up with /welcome; saved in data/welcome.json. Joins and leaves only
 // reach the bot when the Server Members intent is on in the Developer Portal.
 const {
@@ -20,7 +22,16 @@ const store = createStore('welcome.json', { guilds: {} });
 
 const WELCOME_COLOR = 0x57f287;
 const GOODBYE_COLOR = 0x99aab5;
-const DEFAULT_WELCOME = 'Welcome to **{server}**, {user}! You are member #{count}.';
+// Used when a server hasn't written its own.
+const DEFAULT_WELCOMES = [
+  'Welcome to **{server}**, {user}! You are member #{count}.',
+  "👋 Look who just arrived - it's {user}! Welcome to **{server}**.",
+  '🎉 {user} just joined the party! Make yourself at home.',
+  '✨ Everyone say hi to {user}, our newest member!',
+  '🚪 Knock knock - {user} is here! Welcome to **{server}**.',
+  "🥳 Welcome aboard, {user}! You're member #{count}.",
+];
+const MAX_MESSAGES = 25;
 const DEFAULT_GOODBYE = '**{name}** left the server.';
 const PLACEHOLDERS = 'use {user} (mention), {name}, {server} and {count} (members)';
 
@@ -34,6 +45,19 @@ const WELCOME_COMMAND = new SlashCommandBuilder()
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .setContexts(InteractionContextType.Guild)
   .addSubcommand((s) => s.setName('set').setDescription('Welcome new members in a channel').addChannelOption(channelOption).addStringOption(messageOption))
+  .addSubcommand((s) =>
+    s
+      .setName('add-message')
+      .setDescription('Add a welcome message - I pick one at random for each new member')
+      .addStringOption((o) => o.setName('message').setDescription(`The text - ${PLACEHOLDERS}`).setRequired(true).setMaxLength(1000))
+  )
+  .addSubcommand((s) =>
+    s
+      .setName('remove-message')
+      .setDescription('Remove one of the welcome messages')
+      .addIntegerOption((o) => o.setName('number').setDescription('Its number in /welcome messages').setRequired(true).setMinValue(1))
+  )
+  .addSubcommand((s) => s.setName('messages').setDescription('See the welcome messages I pick from'))
   .addSubcommand((s) => s.setName('goodbye').setDescription('Say goodbye when members leave').addChannelOption(channelOption).addStringOption(messageOption))
   .addSubcommand((s) =>
     s
@@ -88,10 +112,21 @@ async function post(client, channelId, payload) {
   return true;
 }
 
+// A server's own welcome messages (older settings kept a single one).
+function welcomeMessages(settings) {
+  if (settings.welcome?.messages?.length) return settings.welcome.messages;
+  return settings.welcome?.message ? [settings.welcome.message] : [];
+}
+
+function pickWelcome(settings) {
+  const pool = welcomeMessages(settings).length ? welcomeMessages(settings) : DEFAULT_WELCOMES;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 function welcomePayload(settings, member) {
   return {
     flags: MessageFlags.IsComponentsV2,
-    components: [card(fill(settings.welcome.message ?? DEFAULT_WELCOME, member), member, WELCOME_COLOR)],
+    components: [card(fill(pickWelcome(settings), member), member, WELCOME_COLOR)],
     // Only the new member is pinged.
     allowedMentions: { users: [member.id] },
   };
@@ -122,7 +157,9 @@ async function handleCommand(interaction) {
       return true;
     }
     const key = sub === 'set' ? 'welcome' : 'goodbye';
-    settings[key] = { channelId: picked.id, message: interaction.options.getString('message') };
+    const message = interaction.options.getString('message');
+    // A new welcome text replaces the list; leaving it out keeps the messages already there.
+    settings[key] = key === 'welcome' ? { channelId: picked.id, messages: message ? [message] : welcomeMessages(settings) } : { channelId: picked.id, message };
     store.save();
     console.log(`/welcome: ${interaction.user.tag} (${interaction.user.id}) set ${key} messages to channel ${picked.id}.`);
     await reply(`${key === 'welcome' ? 'Welcome' : 'Goodbye'} messages now go to <#${picked.id}>.${key === 'welcome' ? ' Try `/welcome test` to see one.' : ''}${intentNote}`);
@@ -149,7 +186,7 @@ async function handleCommand(interaction) {
     store.save();
     await reply(`${which === 'welcome' ? 'Welcome' : 'Goodbye'} messages are off.`);
   } else if (sub === 'test') {
-    if (!settings.welcome) {
+    if (!settings.welcome?.channelId) {
       await reply('Welcome messages are off - set them up with `/welcome set` first.');
       return true;
     }
@@ -158,10 +195,39 @@ async function handleCommand(interaction) {
       allowedMentions: { parse: [] },
     }).catch(() => false);
     await reply(sent ? `Posted a preview in <#${settings.welcome.channelId}>.` : "Couldn't post the preview - check my permissions in that channel.");
+  } else if (sub === 'add-message' || sub === 'remove-message' || sub === 'messages') {
+    const messages = [...welcomeMessages(settings)];
+    if (sub === 'add-message') {
+      if (messages.length >= MAX_MESSAGES) {
+        await reply(`There are already ${MAX_MESSAGES} welcome messages - remove one first with \`/welcome remove-message\`.`);
+        return true;
+      }
+      messages.push(interaction.options.getString('message', true));
+    } else if (sub === 'remove-message') {
+      const number = interaction.options.getInteger('number', true);
+      if (!messages[number - 1]) {
+        await reply(`There's no message #${number} - see them with \`/welcome messages\`.`);
+        return true;
+      }
+      messages.splice(number - 1, 1);
+    }
+    if (sub !== 'messages') {
+      settings.welcome = { ...(settings.welcome ?? { channelId: null }), messages };
+      delete settings.welcome.message;
+      store.save();
+      console.log(`/welcome: ${interaction.user.tag} (${interaction.user.id}) ran ${sub} (${messages.length} messages now).`);
+    }
+    const list = messages.length
+      ? messages.map((text, i) => `**${i + 1}.** ${text}`).join('\n')
+      : `*None yet - I use my ${DEFAULT_WELCOMES.length} built-in ones. Add your own with \`/welcome add-message\`.*`;
+    const header = { 'add-message': '✅ Added!', 'remove-message': '🗑️ Removed!', messages: '' }[sub];
+    const where = settings.welcome?.channelId ? '' : '\n-# Welcome messages are off - pick a channel with `/welcome set`.';
+    await reply(`${header ? `${header} ` : ''}I pick one of these at random for each new member:\n${list}${where}`.slice(0, 2000));
   } else if (sub === 'status') {
+    const count = welcomeMessages(settings).length;
     await reply(
       [
-        `**Welcome:** ${settings.welcome ? `on, in <#${settings.welcome.channelId}>` : 'off'}`,
+        `**Welcome:** ${settings.welcome?.channelId ? `on, in <#${settings.welcome.channelId}> · ${count ? `${count} message${count === 1 ? '' : 's'}` : 'built-in messages'}, picked at random` : 'off'}`,
         `**Goodbye:** ${settings.goodbye ? `on, in <#${settings.goodbye.channelId}>` : 'off'}`,
         `**Auto-role:** ${settings.autoroleId ? `<@&${settings.autoroleId}>` : 'none'}`,
         `**Server Members Intent:** ${membersIntentOn() ? 'on' : 'off - joins and leaves are not seen'}`,
@@ -183,7 +249,7 @@ async function memberJoined(member) {
     if (problem) console.error(`Auto-role in "${member.guild.name}": ${problem.replace(/\*\*/g, '')}`);
     else await member.roles.add(settings.autoroleId, 'Auto-role for new members').catch((err) => console.error('Auto-role failed:', err.message));
   }
-  if (settings.welcome) await post(member.client, settings.welcome.channelId, welcomePayload(settings, member)).catch((err) => console.error('Welcome message failed:', err.message));
+  if (settings.welcome?.channelId) await post(member.client, settings.welcome.channelId, welcomePayload(settings, member)).catch((err) => console.error('Welcome message failed:', err.message));
 }
 
 async function memberLeft(member) {
@@ -201,8 +267,9 @@ const channelFor = (guildId, which) => store.load().guilds[guildId]?.[which]?.ch
 
 function setChannel(guildId, which, channelId) {
   const settings = settingsFor(guildId);
-  settings[which] = channelId ? { channelId, message: settings[which]?.message ?? null } : null;
+  if (which === 'welcome') settings.welcome = channelId ? { channelId, messages: welcomeMessages(settings) } : null;
+  else settings.goodbye = channelId ? { channelId, message: settings.goodbye?.message ?? null } : null;
   store.save();
 }
 
-module.exports = { commands: [WELCOME_COMMAND], handleCommand, init, memberJoined, memberLeft, channelFor, setChannel, membersIntentOn: () => membersIntentOn() };
+module.exports = { commands: [WELCOME_COMMAND], handleCommand, init, memberJoined, memberLeft, channelFor, setChannel, membersIntentOn: () => membersIntentOn(), DEFAULT_WELCOMES };

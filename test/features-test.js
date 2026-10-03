@@ -649,12 +649,50 @@ function click(message, customId, member = alex) {
   });
   await check('a member joins -> welcome card with the placeholders filled, only they are pinged', async () => {
     intentOn = true;
+    const random = Math.random;
+    Math.random = () => 0; // the first built-in message
     await welcome.memberJoined(newcomer);
+    Math.random = random;
     const sent = lastWelcome();
     const text = textOf(sent);
     if (text !== 'Welcome to **Test Server**, <@u-new>! You are member #42.') return text;
     if (!walk(sent.components).some((c) => c.type === ComponentType.Thumbnail)) return 'no avatar';
     return sent.allowedMentions.users.join() === 'u-new' && sent.flags === MessageFlags.IsComponentsV2 ? null : JSON.stringify(sent.allowedMentions);
+  });
+  await check('no messages of its own -> each welcome is one of the built-in ones, at random', async () => {
+    const seen = new Set();
+    for (let n = 0; n < 40; n++) {
+      await welcome.memberJoined(newcomer);
+      seen.add(textOf(lastWelcome()));
+    }
+    const allowed = welcome.DEFAULT_WELCOMES.map((t) => t.replaceAll('{user}', '<@u-new>').replaceAll('{server}', 'Test Server').replaceAll('{count}', '42'));
+    return seen.size > 1 && [...seen].every((t) => allowed.includes(t)) ? null : [...seen].join(' | ');
+  });
+  await check('/welcome add-message twice -> new members get one of those two', async () => {
+    await run(command('welcome', 'add-message', { message: 'Hey {name}, pull up a chair!' }));
+    const text = answer(await run(command('welcome', 'add-message', { message: 'Dinner is served, {user}!' }))).content;
+    if (!text.includes('**1.** Hey {name}, pull up a chair!') || !text.includes('**2.** Dinner is served, {user}!')) return text;
+    const seen = new Set();
+    for (let n = 0; n < 30; n++) {
+      await welcome.memberJoined(newcomer);
+      seen.add(textOf(lastWelcome()));
+    }
+    return [...seen].sort().join(' | ') === 'Dinner is served, <@u-new>! | Hey Newbie, pull up a chair!' ? null : [...seen].join(' | ');
+  });
+  await check('/welcome remove-message and messages -> the list changes; a wrong number is explained', async () => {
+    const removed = answer(await run(command('welcome', 'remove-message', { number: 1 }))).content;
+    const wrong = answer(await run(command('welcome', 'remove-message', { number: 9 }))).content;
+    const list = answer(await run(command('welcome', 'messages'))).content;
+    const status = answer(await run(command('welcome', 'status'))).content;
+    return removed.startsWith('🗑️ Removed!') && wrong.includes("There's no message #9") && list.includes('**1.** Dinner is served, {user}!') && !list.includes('pull up a chair') && status.includes('1 message, picked at random')
+      ? null
+      : `${removed} | ${wrong} | ${list} | ${status}`;
+  });
+  await check('/welcome set without a message -> keeps the list; /setup picking a channel keeps it too', async () => {
+    await run(command('welcome', 'set', { channel: welcomeChannel }));
+    welcome.setChannel('g1', 'welcome', 'c-welcome');
+    const list = answer(await run(command('welcome', 'messages'))).content;
+    return list.includes('Dinner is served') ? null : list;
   });
   await check('/welcome autorole with a moderator role -> refused', async () => {
     const text = answer(await run(command('welcome', 'autorole', { role: 'r-mod' }))).content;
