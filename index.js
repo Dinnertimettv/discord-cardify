@@ -164,7 +164,9 @@ const QUOTE_LABEL = '↪ Quoted post';
 // can reopen them by posting. Checked every 30 minutes.
 const REPLY_THREAD_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const REPLY_THREAD_CHECK_MS = 30 * 60 * 1000;
-const REPLY_THREAD_NAME = /^Top (?:replies|comments) \(/;
+const REPLY_THREAD_NAME = /^(?:Top (?:replies|comments)|Thread) \(/;
+// The most posts "Show thread" posts; longer threads end with a link to the rest.
+const MAX_THREAD_POSTS = 20;
 
 const BOT_USER_AGENT = `DiscordCardify/${BOT_VERSION} (Discord link-preview bot)`;
 // News sites and archive.ph treat obvious bots differently, so use a browser UA there.
@@ -387,6 +389,33 @@ async function fetchTweet(id, { lang } = {}) {
   return status;
 }
 
+// How many posts are in the author's own thread this post belongs to (1 when
+// it isn't part of one), or 0 if fxtwitter couldn't say.
+async function countThreadPosts(id) {
+  const data = await fetchFxtwitter(`conversation/${id}`).catch(() => null);
+  return data ? authorThread(data).length : 0;
+}
+
+// The author's own thread around a post, in order, from fxtwitter's
+// conversation data: the posts above it are listed under `thread` (ending with
+// the post itself), and the ones after it are among the replies - each one the
+// author's reply to the one before.
+function authorThread(data) {
+  const author = (data.status ?? data.thread?.at(-1))?.author?.screen_name;
+  const isAuthors = (post) => post && post.type !== 'tombstone' && post.author?.screen_name === author;
+  // The author's run of posts just above this one - they may have replied into
+  // someone else's conversation, so stop at the first post by anyone else.
+  const chain = [];
+  for (const post of [...(data.thread ?? [])].reverse()) {
+    if (!isAuthors(post)) break;
+    chain.unshift(post);
+  }
+  if (chain.length === 0 && isAuthors(data.status)) chain.push(data.status);
+  const ownReplies = (data.replies ?? []).filter(isAuthors);
+  for (let next; (next = ownReplies.find((reply) => reply.replying_to?.status === chain.at(-1)?.id)); ) chain.push(next);
+  return chain;
+}
+
 // Replies ranked by likes, skipping deleted/hidden ones.
 async function fetchTopReplies(id, count) {
   const data = await fetchFxtwitter(`conversation/${id}?ranking_mode=likes`);
@@ -447,8 +476,10 @@ function buildTweetEmbed(tweet) {
 async function processTweetLink([, user, id, rest], settings) {
   const link = `https://${FIX_DOMAIN}/${user}/status/${id}${cleanLink(rest)}`;
   try {
-    const tweet = await loadTweet(id, settings.language);
+    const [tweet, threadLength] = await Promise.all([loadTweet(id, settings.language), countThreadPosts(id)]);
     const quoted = tweet.quote?.type === 'tombstone' ? null : tweet.quote;
+    // The translate button shows on posts that aren't in the server's language.
+    const serverLanguage = settings.language === 'off' ? 'en' : settings.language;
     const card = {
       components: buildTweetComponents(tweet),
       open: { label: 'Open on 𝕏', url: tweet.url || `https://x.com/${user}/status/${id}` },
@@ -456,6 +487,10 @@ async function processTweetLink([, user, id, rest], settings) {
       copyId: `copy-x:${tweet.author?.screen_name || 'i'}:${id}`,
       revealKey: id,
       repliesId: tweet.replies > 0 ? id : null,
+      threadId: threadLength > 1 ? id : null,
+      threadLength,
+      downloadId: postVideoUrls(tweet).length || postVideoUrls(quoted).length ? `dl:x:${id}` : null,
+      translateId: tweet.text && needsTranslation(tweet.lang, serverLanguage) ? `translate-x:${id}` : null,
     };
     return [{ card }];
   } catch (err) {
@@ -502,6 +537,7 @@ function buildTweetComponents(tweet) {
   );
   addTranslation(card, tweet, limits);
   addMedia(card, postMediaUrls(tweet), { sensitive: tweet.possibly_sensitive, platform: 'X' });
+  addPoll(card, tweet.poll);
 
   if (quote) {
     card.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
@@ -565,6 +601,37 @@ function postMediaUrls(post) {
   return (post.media?.all ?? [...(post.media?.photos ?? []), ...(post.media?.videos ?? [])])
     .map((item) => item.url)
     .filter(Boolean);
+}
+
+// Just a post's video files (GIFs come as videos too) - for "Download video".
+function postVideoUrls(post) {
+  if (!post || post.type === 'tombstone') return [];
+  const videos = post.media?.all
+    ? post.media.all.filter((item) => item.type === 'video' || item.type === 'gif')
+    : (post.media?.videos ?? []);
+  return videos.map((item) => item.url).filter(Boolean);
+}
+
+// An X poll: the vote count and when it ends, then each choice with a bar
+// and its share of the votes.
+function addPoll(card, poll) {
+  if (!poll?.choices?.length) return;
+  const endsAt = unixTime(poll.ends_at);
+  const ended = endsAt !== null && endsAt * 1000 <= Date.now();
+  const votes = poll.total_votes ?? 0;
+  const header = [
+    '📊 **Poll**',
+    `${votes.toLocaleString()} ${votes === 1 ? 'vote' : 'votes'}`,
+    ended ? 'final results' : endsAt && `ends <t:${endsAt}:R>`,
+  ]
+    .filter(Boolean)
+    .join('  ·  ');
+  const choices = poll.choices.map((choice) => {
+    const percent = Math.round(choice.percentage ?? 0);
+    const filled = Math.round(percent / 10);
+    return `\`${'█'.repeat(filled)}${'░'.repeat(10 - filled)}\` **${percent}%**  ${escapeMarkdown(choice.label ?? '')}`;
+  });
+  card.addTextDisplayComponents(new TextDisplayBuilder().setContent([header, ...choices].join('\n')));
 }
 
 // A translation, shown under the original rather than replacing it.
@@ -656,6 +723,14 @@ function instagramPostUrl(kind, code) {
   return `https://www.instagram.com/${kind}/${code}/`;
 }
 
+// A TikTok or Instagram post's video files - for "Download video".
+function fixerVideoUrls(status) {
+  return (status.media_attachments ?? [])
+    .filter((item) => item.type === 'video' || item.type === 'gifv')
+    .map((item) => item.url)
+    .filter(Boolean);
+}
+
 async function fetchFixerStatus(domain, id) {
   const res = await request(`https://${domain}/api/v1/statuses/${encodeURIComponent(id)}`);
   const status = await res.json().catch(() => null);
@@ -729,6 +804,7 @@ async function processTikTokLink({ original, fixed }) {
       open: { label: 'Open on TikTok', url },
       extraLinks: [],
       copyId: `copy-fix:tt:${kind}:${id}`,
+      downloadId: fixerVideoUrls(status).length ? `dl:tt:${id}` : null,
       revealKey: `tt~${kind}~${id}`,
     };
     return [{ card }];
@@ -749,6 +825,7 @@ async function processInstagramLink({ original, fixed }) {
       open: { label: 'Open on Instagram', url },
       extraLinks: [],
       copyId: `copy-fix:ig:${post.kind}:${post.code}`,
+      downloadId: fixerVideoUrls(status).length ? `dl:ig:${post.code}` : null,
       revealKey: `ig~${post.kind}~${post.code}`,
     };
     return [{ card }];
@@ -895,6 +972,8 @@ async function processTwitchLink(link) {
       open: { label: 'Open on Twitch', url: link.url },
       extraLinks: [],
       copyId: `copy-tw:${link.kind}:${link.id}`,
+      // Only clips have a video file - streams and past broadcasts don't.
+      downloadId: link.kind === 'clip' ? `dl:tw:${link.id}` : null,
       revealKey: `tw~${link.kind}~${link.id}`,
     };
     return [{ card }];
@@ -1404,6 +1483,11 @@ function cardButtons(card, { posterId, canStartThreads }) {
     ...card.extraLinks.map(linkButton),
     ...(fits(card.copyId) ? [makeButton(card.copyId, '🔗 Copy link')] : []),
     ...(canStartThreads && card.repliesId ? [makeButton(`top-replies:${card.repliesId}`, '💬 Show top 3 replies')] : []),
+    ...(canStartThreads && card.threadId
+      ? [makeButton(`x-thread:${card.threadId}`, `🧵 Show thread (${card.threadLength} posts)`)]
+      : []),
+    ...(card.downloadId && fits(card.downloadId) ? [makeButton(card.downloadId, '⬇️ Download video')] : []),
+    ...(card.translateId ? [makeButton(card.translateId, '🌐 Translate')] : []),
     ...(card.summaryId ? [makeButton(`yt-summary:${card.summaryId}`, '✨ Video Summary')] : []),
     ...(fits(flagId) ? [makeButton(flagId, '🚩 Flag as NSFW')] : []),
   ]);
@@ -1720,6 +1804,9 @@ const BUTTON_HANDLERS = {
   'copy-tw': { run: copyTwitchLink, failMessage: "Couldn't get that link." },
   'copy-yt': { run: copyYouTubeLink, failMessage: "Couldn't get that link." },
   'watch-yt': { run: watchOnDiscord, failMessage: "Couldn't open that video." },
+  'x-thread': { run: postThread, failMessage: `Couldn't post the thread - ${DELETED_OR_PRIVATE}` },
+  dl: { run: downloadVideo, failMessage: `Couldn't get the video - ${DELETED_OR_PRIVATE}` },
+  'translate-x': { run: translatePost, failMessage: "Couldn't translate that post right now - try again in a moment." },
   'watch-together': { run: watchTogether, failMessage: "Couldn't start Watch Together - try again in a moment." },
   'yt-summary': { run: showVideoSummary, failMessage: "Couldn't get that video's summary." },
   'flag-card': { run: flagCard, failMessage: FLAG_FAILED },
@@ -2038,6 +2125,84 @@ async function postTopReplies(interaction, tweetId) {
 
   await disableClickedButton(interaction, '✅ Replies posted');
   await replyPrivately(interaction, `Posted the top ${replies.length} replies in the thread.`);
+}
+
+// "Show thread" on an X post: posts the author's whole thread, in order, into
+// a public Discord thread on the message (closed after 24 hours, like replies).
+async function postThread(interaction, tweetId) {
+  await interaction.deferUpdate();
+  interaction.deferredAsUpdate = true;
+  const posts = authorThread(await fetchFxtwitter(`conversation/${tweetId}`));
+  if (posts.length < 2) return replyPrivately(interaction, "That post isn't part of a thread anymore.");
+
+  const shown = posts.slice(0, MAX_THREAD_POSTS);
+  const thread = await getOrCreateThread(interaction.message, `Thread (${posts.length} posts)`);
+  for (const [i, post] of shown.entries()) {
+    const number = `**${i + 1}/${posts.length}**`;
+    // Video posts get a fixer link, same as everywhere else.
+    const payload = post.media?.videos?.length
+      ? { content: `${number} https://${FIX_DOMAIN}/${post.author?.screen_name || 'i'}/status/${post.id}` }
+      : { content: number, embeds: [buildTweetEmbed(post)] };
+    await thread.send(payload);
+  }
+  if (posts.length > shown.length) {
+    await thread.send({ content: `…and ${posts.length - shown.length} more on X: <${posts.at(-1).url}>` });
+  }
+
+  await disableClickedButton(interaction, '✅ Thread posted');
+  await replyPrivately(interaction, `Posted the ${posts.length}-post thread.`);
+}
+
+// "Download video": the post's video file(s), privately - opening one shows it
+// in Discord's player, where it can be saved. Links are fetched fresh, since
+// some (Twitch clips) expire.
+async function downloadVideo(interaction, platform, id) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  let urls = [];
+  if (platform === 'x') {
+    const tweet = await fetchTweet(id);
+    urls = [...postVideoUrls(tweet), ...postVideoUrls(tweet.quote)];
+  } else if (platform === 'tt') {
+    urls = fixerVideoUrls(await fetchFixerStatus(TIKTOK_FIX_DOMAIN, id));
+  } else if (platform === 'ig') {
+    urls = fixerVideoUrls(await fetchFixerStatus(INSTAGRAM_FIX_DOMAIN, id));
+  } else if (platform === 'tw') {
+    urls = [twitchClipVideo(await fetchTwitch('clip', id))].filter(Boolean);
+  }
+  if (urls.length === 0) {
+    await interaction.editReply({ content: "Couldn't find a video in that post anymore." });
+    return;
+  }
+  const lines = urls.length === 1 ? urls : urls.map((url, i) => `**${i + 1}.** ${url}`);
+  await interaction.editReply({ content: ['⬇️ Open the video, then save it from there:', ...lines].join('\n') });
+}
+
+// "Translate" on an X post: the post (and the post it quotes) translated into
+// the clicker's own Discord language, privately.
+async function translatePost(interaction, tweetId) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const language = (interaction.locale || 'en').split('-')[0].toLowerCase();
+  const tweet = await fetchTweet(tweetId, { lang: language });
+  const quote = tweet.quote?.type === 'tombstone' ? null : tweet.quote;
+  const translated = [tweet, quote].filter((post) => post?.translation?.text);
+  if (translated.length === 0) {
+    const already = !needsTranslation(tweet.lang, language);
+    await interaction.editReply({
+      content: already ? 'That post is already in your language.' : "X couldn't translate that post right now.",
+    });
+    return;
+  }
+  const text = translated
+    .map((post) => {
+      const from = post.translation.source_lang_en || post.translation.source_lang || 'another language';
+      const heading = post === quote ? '### ↪ Quoted post\n' : '';
+      return `${heading}-# 🌐 Translated from ${from}\n${truncate(post.translation.text, 1800)}`;
+    })
+    .join('\n\n');
+  const card = new ContainerBuilder()
+    .setAccentColor(X_POST_COLOR)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(`### 𝕏  ·  ${postNameLine(tweet)}\n${text}`));
+  await interaction.editReply({ flags: MessageFlags.IsComponentsV2, components: [card] });
 }
 
 // Flagging hides a post for the whole channel, so in servers it's limited to

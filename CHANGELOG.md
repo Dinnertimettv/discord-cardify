@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.1.0 - in progress
+
+Cardify grows from a link bot into an all-in-one server bot.
+
+### New
+
+**Better cards**
+- **🧵 Show thread** on X posts that are part of a thread by the same author
+  (the button shows how many posts): posts the whole thread, in order, into
+  a Discord thread on the message.
+- **⬇️ Download video** on X, TikTok, Instagram, and Twitch clip cards:
+  privately gives the video file to open and save.
+- **📊 X polls** show on the card - each choice with a bar and its
+  percentage, the vote count, and when it ends (or "final results").
+- **🌐 Translate** on X posts that aren't in the server's language:
+  translates into the clicker's own Discord language, privately.
+
 ## 2.0.0 - September 27, 2026
 
 A ground-up overhaul: every shared post now becomes a clean card built by the

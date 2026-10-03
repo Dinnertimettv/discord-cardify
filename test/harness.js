@@ -83,6 +83,22 @@ const MOCKS = {
   }) }),
   // An English post, for the server-language translation test (translated only when asked for Spanish).
   '/2/status/9000000000000000012': (u) => json({ code: 200, status: mockTweet('9000000000000000012', { text: 'Hello there', ...(u.includes('lang=es') ? { translation: { text: 'Hola', source_lang_en: 'English' } } : {}) }) }),
+  // A post with an X poll that has ended.
+  '/2/status/9000000000000000015': () => json({ code: 200, status: mockTweet('9000000000000000015', {
+    text: 'Best pizza topping?',
+    poll: { total_votes: 1234, ends_at: '2026-01-01T00:00:00Z', choices: [{ label: 'Pepperoni', count: 765, percentage: 62 }, { label: 'Pine_apple', count: 469, percentage: 38 }] },
+  }) }),
+  // The first post of a 3-post thread by the same author (one post has a video). Like the real
+  // API: `thread` holds the posts above (just itself here), and the rest are among the replies -
+  // the author replying to themselves, mixed in with other people's replies.
+  '/2/status/9000000000000000016': () => json({ code: 200, status: mockTweet('9000000000000000016', { text: 'A thread 🧵 1/3' }) }),
+  '/2/conversation/9000000000000000016': () => json({ code: 200, status: mockTweet('9000000000000000016', { text: '1/3' }),
+    thread: [mockTweet('9000000000000000016', { text: '1/3' })],
+    replies: [
+      mockTweet('9000000000000000019', { text: 'someone else', author: { name: 'Other', screen_name: 'other' }, replying_to: { status: '9000000000000000016' } }),
+      mockTweet('9000000000000000018', { text: '3/3', replying_to: { status: '9000000000000000017' } }),
+      mockTweet('9000000000000000017', { text: '2/3', media: vid, replying_to: { status: '9000000000000000016' } }),
+    ] }),
   '/2/conversation/': () => json({ code: 200, replies: [mockTweet('11'), { type: 'tombstone' }, mockTweet('12', { media: vid }), mockTweet('13'), mockTweet('14')] }),
   // TikTok and Instagram status feeds (Mastodon-style), a TikTok share link, and 404s for anything else.
   'tnktok.com/api/v1/statuses/7000000000000000001': () => json({
@@ -435,7 +451,7 @@ async function click(label, customId, sent, opts, check) {
     if (out.length !== 1 || !out[0].isCard || cardsOf(out[0]).length !== 1) return `${out.length} messages`;
     if (!mediaOf(out[0].components).some((u) => u.includes('video.twimg.com'))) return "the post's video is missing";
     if (!mediaOf(out[0].components).includes('https://pbs.twimg.com/p.jpg') || thumbsOf(out[0].components).includes('https://pbs.twimg.com/p.jpg')) return 'the quoted photo should be in a gallery, not a thumbnail';
-    return out[0].buttons.join() === `copy-x:mock:9000000000000000009,top-replies:9000000000000000009,flag-card:9000000000000000009:${POSTER}` ? null : `buttons ${out[0].buttons}`;
+    return out[0].buttons.join() === `copy-x:mock:9000000000000000009,top-replies:9000000000000000009,dl:x:9000000000000000009,flag-card:9000000000000000009:${POSTER}` ? null : `buttons ${out[0].buttons}`;
   });
   await run('commentary with another website\'s link + X post -> comment gets its own plain message', 'lol https://example.com/page https://x.com/jack/status/20', {}, (out) =>
     out.length === 2 && out[0].content.includes('example.com/page') && !out[0].isCard && !out[0].buttons.length && out[1].isCard && out[1].components[0].type === TYPE.Container ? null : `${out.length} messages`);
@@ -460,7 +476,7 @@ async function click(label, customId, sent, opts, check) {
     if (mediaOf(u.components).length) return 'media still visible';
     const text = textOf(u.components);
     if (!text.startsWith(`<@${POSTER}> shared:`) || !text.includes('Flagged as NSFW') || text.includes('Quoted by')) return text;
-    if (u.buttons.join() !== `copy-x:mock:9000000000000000009,top-replies:9000000000000000009,reveal-card:9000000000000000009,unflag-card:${POSTER}`) return `buttons ${u.buttons}`;
+    if (u.buttons.join() !== `copy-x:mock:9000000000000000009,top-replies:9000000000000000009,dl:x:9000000000000000009,reveal-card:9000000000000000009,unflag-card:${POSTER}`) return `buttons ${u.buttons}`;
     return log.some((l) => l[0] === 'followUp') ? null : 'no confirmation';
   });
   const flaggedShot = cardFlagLog.find((l) => l[0] === 'update')[1];
@@ -489,6 +505,37 @@ async function click(label, customId, sent, opts, check) {
   });
   await click('reveal a deleted post -> friendly error', 'reveal-card:1', plain, {}, (log) =>
     log.at(-1)?.[0] === 'editReply' && log.at(-1)[1].content.includes("Couldn't") ? null : 'no error reply');
+  // --- Better Cards: polls, threads, download video, translate ---
+  await run('X poll -> votes, final results, a bar and percentage per choice', 'https://x.com/u/status/9000000000000000015', {}, ([o]) => {
+    const text = textOf(cardsOf(o));
+    if (!text.includes('📊 **Poll**  ·  1,234 votes  ·  final results')) return text;
+    return text.includes('`██████░░░░` **62%**  Pepperoni') && text.includes('`████░░░░░░` **38%**  Pine\\_apple') ? null : text;
+  });
+  const threadCard = await run('first post of a 3-post thread -> "Show thread" button; text-only post -> no download button', 'https://x.com/u/status/9000000000000000016', {}, ([o]) =>
+    (o.buttons.includes('x-thread:9000000000000000016') && !o.buttons.some((b) => b.startsWith('dl:')) ? null : `buttons ${o.buttons}`));
+  await click('Show thread -> all 3 posts in order in a thread, video post as a link, button disabled', 'x-thread:9000000000000000016', threadCard, {}, (log) => {
+    const sent = log.filter((l) => l[0] === 'thread.send').map((l) => l[1]);
+    if (log[0] !== 'deferUpdate' || !log.includes('startThread("Thread (3 posts)", 1440)')) return `log ${log.filter((l) => typeof l === 'string')}`;
+    if (sent.length !== 3 || !sent[0].content.startsWith('**1/3**') || !sent[1].content.includes('fxtwitter.com/mock/status/9000000000000000017')) return `sent ${sent.map((s) => s.content)}`;
+    const edit = log.find((l) => l[0] === 'editReply')?.[1];
+    const button = edit && walk(edit.components).find((c) => c.custom_id === 'x-thread:9000000000000000016');
+    return button?.disabled ? null : 'button not disabled';
+  });
+  const nonEnglish = await run('post not in the server\'s language -> 🌐 Translate and ⬇️ Download buttons', 'https://x.com/u/status/9000000000000000008', {}, ([o]) =>
+    (o.buttons.includes('translate-x:9000000000000000008') && o.buttons.includes('dl:x:9000000000000000008') ? null : `buttons ${o.buttons}`));
+  await click('Translate -> the post in the clicker\'s Discord language, privately', 'translate-x:9000000000000000008', nonEnglish, {}, (log) => {
+    const r = log.find((l) => l[0] === 'editReply')?.[1];
+    const text = textOf(r?.components ?? []);
+    return log[0] === `deferReply(flags=${discord.MessageFlags.Ephemeral})` && text.includes('🌐 Translated from Japanese\nHello') ? null : `reply ${text || r?.content}`;
+  });
+  await click('Translate on a post already in your language -> says so', 'translate-x:9000000000000000009', nonEnglish, {}, (log) =>
+    (log.find((l) => l[0] === 'editReply')?.[1].content === 'That post is already in your language.' ? null : 'wrong reply'));
+  await click('Download video on an X post -> its video file, privately', 'dl:x:9000000000000000009', nonEnglish, {}, (log) => {
+    const r = log.find((l) => l[0] === 'editReply')?.[1];
+    return log[0] === `deferReply(flags=${discord.MessageFlags.Ephemeral})` && r?.content.includes('https://video.twimg.com/x.mp4') ? null : `reply ${r?.content}`;
+  });
+  await click('Download video on a TikTok -> its video file', 'dl:tt:7000000000000000001', nonEnglish, {}, (log) =>
+    (log.find((l) => l[0] === 'editReply')?.[1].content.includes('https://offload.tnktok.com/generate/video/7000000000000000001') ? null : 'no video link'));
   await click('top replies on a card -> thread, card kept, button disabled, private status', 'top-replies:20', plain, {}, (log) => {
     // deferUpdate, then editReply edits the clicked message itself (works for webhook posts too).
     const edit = log.find((l) => l[0] === 'editReply')?.[1];
@@ -589,7 +636,7 @@ async function click(label, customId, sent, opts, check) {
     if (!text.includes('**35.2K** Likes   **5.7K** Comments   **1.5K** Shares')) return `stats: ${text}`;
     if (!mediaOf([card]).includes('https://offload.tnktok.com/generate/video/7000000000000000001')) return 'video missing';
     if (o.links.join() !== 'Open on TikTok -> https://tiktok.com/@creator/video/7000000000000000001') return `links ${o.links}`;
-    return o.buttons.join() === `copy-fix:tt:video:7000000000000000001,flag-card:tt~video~7000000000000000001:${POSTER}` ? null : `buttons ${o.buttons}`;
+    return o.buttons.join() === `copy-fix:tt:video:7000000000000000001,dl:tt:7000000000000000001,flag-card:tt~video~7000000000000000001:${POSTER}` ? null : `buttons ${o.buttons}`;
   });
   const slideshow = await run('TikTok slideshow -> 3 images, blurred (marked sensitive)', 'https://www.tiktok.com/@creator/photo/7000000000000000002', {}, ([o]) => {
     const gallery = walk(o.components).find((c) => c.type === TYPE.MediaGallery);
@@ -652,7 +699,7 @@ async function click(label, customId, sent, opts, check) {
   });
   await run('Twitch channel that does not exist -> plain link, Discord previews it', 'https://www.twitch.tv/nosuchchannel', {}, ([o]) => has(o.content, 'https://www.twitch.tv/nosuchchannel'));
   await run('Twitch clip with a very long name -> card still posts, only the button whose id would be too long (Flag) left off', `https://clips.twitch.tv/${LONG_CLIP_SLUG}`, {}, ([o]) =>
-    o?.isCard && o.links.length === 1 && o.buttons.join() === `copy-tw:clip:${LONG_CLIP_SLUG}` ? null : `buttons ${o?.buttons}`);
+    o?.isCard && o.links.length === 1 && o.buttons.join() === `copy-tw:clip:${LONG_CLIP_SLUG},dl:tw:${LONG_CLIP_SLUG}` ? null : `buttons ${o?.buttons}`);
   await click('copy link on a Twitch card', 'copy-tw:clip:MockClipSlug-abc', twitchLive, {}, copyCheck(['https://clips.twitch.tv/MockClipSlug-abc']));
   await click('reveal a Twitch card', 'reveal-card:tw~video~1234567890', twitchVod, {}, (log) =>
     mediaOf(log.find((l) => l[0] === 'editReply')?.[1].components ?? []).length === 1 ? null : 'no private card');
