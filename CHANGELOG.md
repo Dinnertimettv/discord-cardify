@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.3.1 - October 3, 2026
+
+### Fixed
+
+- `/join-to-create` is split in two: `create` makes a brand-new Join to
+  Create channel (nothing to fill in; it copies the picked category's
+  permissions), and `add` turns a voice channel you already have into
+  one. Before, making a new one meant leaving the `channel` option
+  blank, and Discord won't send a command with an empty option.
+- Options that said "leave empty" now say to run the command without
+  them (`/welcome autorole`, `/levels channel`, `/levels reward`,
+  `/music-setup dj-role`).
+- `/help` shows **Manage Expressions** for `/emoji` and `/sound` instead
+  of a raw permission name.
+
 ## 2.3.0 - October 3, 2026
 
 ### New
