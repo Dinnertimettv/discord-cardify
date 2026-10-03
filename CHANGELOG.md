@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.2.0 - in progress
+## 2.2.0 - October 3, 2026
 
 ### New
 
