@@ -41,6 +41,10 @@ const MODERATOR_PERMISSIONS = [
   PermissionFlagsBits.ModerateMembers,
   PermissionFlagsBits.MentionEveryone,
   PermissionFlagsBits.ViewAuditLog,
+  // Voice moderation: server-muting, deafening, and moving or disconnecting people.
+  PermissionFlagsBits.MuteMembers,
+  PermissionFlagsBits.DeafenMembers,
+  PermissionFlagsBits.MoveMembers,
 ];
 
 const ROLES_COMMAND = new SlashCommandBuilder()
@@ -321,10 +325,19 @@ async function listPanels(interaction) {
 async function setRole(member, roleId, give) {
   const role = member.guild.roles.cache.get(roleId);
   const problem = roleProblem(role, member.guild);
-  if (problem) return { problem };
+  if (problem) {
+    console.error(`Role panel in "${member.guild.name}": ${problem.replace(/\*\*/g, '')}`);
+    return { problem, role };
+  }
   if (member.roles.cache.has(roleId) === give) return { changed: false, role };
   await (give ? member.roles.add(roleId, 'Role panel') : member.roles.remove(roleId, 'Role panel'));
   return { changed: true, role };
+}
+
+// What went wrong, for whoever clicked: admins get the fix, members a friendly note.
+function forClicker(interaction, result) {
+  if (interaction.memberPermissions?.has(PermissionFlagsBits.ManageRoles)) return result.problem;
+  return `Sorry, I can't give out ${result.role ? `**${result.role.name}**` : 'that role'} right now - please let an admin know.`;
 }
 
 // Clicking a role button: toggles that role (and, on a one-at-a-time panel,
@@ -337,7 +350,7 @@ async function handleButton(interaction, roleId) {
   const member = interaction.member;
   const give = !member.roles.cache.has(roleId);
   const result = await setRole(member, roleId, give);
-  if (result.problem) return reply(interaction, result.problem);
+  if (result.problem) return reply(interaction, forClicker(interaction, result));
   if (give && panel.single) {
     for (const option of panel.options) if (option.roleId !== roleId) await setRole(member, option.roleId, false);
   }
@@ -355,7 +368,7 @@ async function handleSelect(interaction) {
   const problems = [];
   for (const option of panel.options) {
     const result = await setRole(interaction.member, option.roleId, picked.has(option.roleId));
-    if (result.problem) problems.push(result.problem);
+    if (result.problem) problems.push(forClicker(interaction, result));
     else if (result.changed) (picked.has(option.roleId) ? added : removed).push(`**${result.role.name}**`);
   }
   const lines = [

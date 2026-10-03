@@ -55,6 +55,7 @@ for (const role of [
   makeRole('r-blue', 'Blue'),
   makeRole('r-mod', 'Mod', { permissions: PermissionFlagsBits.ManageMessages }),
   makeRole('r-admin', 'Admin', { permissions: PermissionFlagsBits.Administrator }),
+  makeRole('r-voice', 'Voice Mover', { permissions: PermissionFlagsBits.MoveMembers }),
   makeRole('r-bot', 'SomeBot', { managed: true }),
   makeRole('r-high', 'Above Cardify', { editable: false }),
 ]) guild.roles.cache.set(role.id, role);
@@ -158,7 +159,7 @@ function click(message, customId, member = alex) {
     return button?.label === 'Gamer' && button.emoji?.name === '🎮' && textOf(buttonsPanel.payload).includes('🎮  <@&r-gamer>') ? null : JSON.stringify(button);
   });
   await run(command('roles', 'add', { panel: buttonsPanel.id, role: 'r-artist', label: 'Artists' }));
-  for (const [role, why] of [['r-admin', 'moderator-level'], ['r-mod', 'moderator-level'], ['r-bot', 'belongs to a bot'], ['r-high', 'drag my role above'], ['g1', '@everyone']]) {
+  for (const [role, why] of [['r-admin', 'moderator-level'], ['r-mod', 'moderator-level'], ['r-voice', 'moderator-level'], ['r-bot', 'belongs to a bot'], ['r-high', 'drag my role above'], ['g1', '@everyone']]) {
     await check(`add ${role} -> refused (${why})`, async () => {
       const i = await run(command('roles', 'add', { panel: buttonsPanel.id, role }));
       return answer(i).content.includes(why) && !walk(buttonsPanel.payload.components).some((c) => c.custom_id === `role:${role}`) ? null : answer(i).content;
@@ -180,8 +181,13 @@ function click(message, customId, member = alex) {
     guild.roles.cache.get('r-artist').permissions = new PermissionsBitField(PermissionFlagsBits.BanMembers);
     const i = click(buttonsPanel, 'role:r-artist');
     await roles.handleButton(i, 'r-artist');
+    // An admin clicking sees what to fix.
+    const admin = click(buttonsPanel, 'role:r-artist');
+    admin.memberPermissions = { has: () => true };
+    await roles.handleButton(admin, 'r-artist');
     guild.roles.cache.get('r-artist').permissions = new PermissionsBitField(0n);
-    return answer(i).content.includes('moderator-level') && !alex.log.includes('+r-artist') ? null : answer(i).content;
+    if (!answer(admin).content.includes('moderator-level')) return answer(admin).content;
+    return answer(i).content === "Sorry, I can't give out **Artist** right now - please let an admin know." && !alex.log.includes('+r-artist') ? null : answer(i).content;
   });
 
   // A one-at-a-time dropdown.
