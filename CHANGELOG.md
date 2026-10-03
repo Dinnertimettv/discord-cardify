@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.0 - in progress
+## 2.1.0 - October 3, 2026
 
 Cardify grows from a link bot into an all-in-one server bot.
 
