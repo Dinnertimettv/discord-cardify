@@ -249,7 +249,7 @@ decide whose links get cards and who earns XP.
 | `/logs` | Manage Server | A mod log channel: deleted and edited messages, bans, joins and leaves, every `/mod` action. |
 | `/welcome` | Manage Server | Welcome and goodbye messages, and a role every new member gets. |
 | `/rank`, `/leaderboard`, `/levels` | everyone / Manage Server | Leveling: XP for chatting (once a minute), level-up messages, and roles as rewards. Off until `/levels on`. |
-| `/play`, `/radio`, `/music` | everyone | A music player for voice channels: uploaded files, direct audio links, internet radio (searchable), and the sound of X / TikTok / Instagram / Twitch clips. Queue, skip, pause, volume, loop, shuffle, plus buttons on the "Now playing" card. YouTube and Spotify aren't supported. |
+| `/play`, `/radio`, `/music` | everyone | A music player for voice channels: search for a song by name, YouTube links and playlists, Spotify songs, albums and playlists (each song is found on YouTube Music), uploaded files, direct audio links, internet radio (searchable), and the sound of X / TikTok / Instagram / Twitch clips. Queue, skip, pause, volume, loop, shuffle, plus buttons on the "Now playing" card. |
 | `/music-setup` | Manage Server | A DJ role, which voice channels music can join, the starting volume, the queue limit, and 24/7 mode. |
 | `/setup`, `/access` | Manage Server | The setup guide, and who can use what, and where (see above). |
 | `/help`, `!help` | everyone | What every feature and command does. |
@@ -290,7 +290,11 @@ auto-created role, and toggle on any new permissions there instead.
 ### 3. Install and run
 
 Requires Node.js 22.12 or newer. `npm install` also downloads ffmpeg
-(about 80 MB) for the music player.
+(about 80 MB) for the music player. The first time the bot starts, it
+downloads [yt-dlp](https://github.com/yt-dlp/yt-dlp) (about 17 MB, into
+`bin/`) for YouTube and Spotify songs, and lets it update itself once a day,
+since YouTube changes often. Playing YouTube audio in a bot is against
+YouTube's terms of service - this bot is meant for private servers.
 
 ```bash
 npm install

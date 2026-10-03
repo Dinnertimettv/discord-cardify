@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.2.0 - in progress
+
+### New
+
+**YouTube and Spotify in the music player**
+- `/play song:` takes a song name to search YouTube, or a YouTube link
+  (a video, a Short, or a whole playlist).
+- Spotify songs, albums and playlists work too - each song is found on
+  YouTube Music when it's its turn, so long playlists are added instantly.
+- The "Now playing" card and the queue show each song's length.
+- If a song can't be played (private, age-restricted, or not found), the
+  bot says why and moves on to the next one.
+- YouTube audio comes through [yt-dlp](https://github.com/yt-dlp/yt-dlp),
+  downloaded into `bin/` the first time the bot starts and updated once a
+  day. It's only given YouTube links and searches the bot builds itself.
+
+### Changed
+
+- `/play`'s `link` option is now `song` (a name to search, or any link).
+
 ## 2.1.0 - October 3, 2026
 
 Cardify grows from a link bot into an all-in-one server bot.

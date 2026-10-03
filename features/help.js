@@ -70,8 +70,14 @@ const GUIDES = {
     start: ['Turn it on: `/levels on on:True`', 'See your level: `/rank`', 'Give a prize role: `/levels reward level:5 role:@Active`'],
   },
   music: {
-    about: 'I play music in voice channels: songs you upload, music links, radio stations, and the sound from X, TikTok, Instagram and Twitch clips. (Not YouTube or Spotify.)',
-    start: ['Join a voice channel.', 'Play a radio station: `/radio station:lofi`', 'Or play a file or link: `/play link:<a link>`', 'Use the buttons on the card to pause, skip or stop.'],
+    about: 'I play music in voice channels. Search for any song, or paste a YouTube or Spotify link (songs, albums and playlists work too). I can also play radio stations, songs you upload, and the sound from X, TikTok, Instagram and Twitch clips.',
+    start: [
+      'Join a voice channel.',
+      'Type the name of a song: `/play song:never gonna give you up`',
+      'Or paste a link: `/play song:<a YouTube or Spotify link>`',
+      'Play a radio station: `/radio station:lofi`',
+      'Use the buttons on the card to pause, skip or stop.',
+    ],
   },
   setup: {
     about: 'Tools for admins: set me up step by step, and choose who can use what, and where.',

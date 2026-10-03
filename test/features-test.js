@@ -818,6 +818,7 @@ function click(message, customId, member = alex) {
     },
     clipAudioFor: async (link) =>
       link.includes('/status/1') ? { url: 'https://video.example/clip.mp4', title: '@someone: a funny clip', link } : null,
+    youtubeVideo: async (id) => ({ dQw4w9WgXcQ: { title: 'Never Gonna Give You Up', seconds: 213 }, AgeLimited1: { title: 'Grown-ups only', ageRestricted: true } })[id] ?? null,
   });
 
   const listener = (id) => ({ id, user: { bot: false } });
@@ -843,16 +844,14 @@ function click(message, customId, member = alex) {
   const buttonIds = (payload) => walk(payload.components).filter((c) => c.type === ComponentType.Button).map((c) => c.custom_id);
 
   await check('/play while not in a voice channel -> asked to join one', async () => {
-    const text = replyText(await run(musicCommand('play', null, { link: 'https://music.example/My_Song.mp3' }, { voice: false })));
+    const text = replyText(await run(musicCommand('play', null, { song: 'https://music.example/My_Song.mp3' }, { voice: false })));
     return text.includes('Join a voice channel') && joins.length === 0 ? null : text;
   });
   await check('/play with nothing -> asks for a link or file', async () => {
     const text = replyText(await run(musicCommand('play', null, {})));
-    return text.includes('`link` or a `file`') ? null : text;
+    return text.includes('a `song` to search for') ? null : text;
   });
   for (const [label, link, expected] of [
-    ['a YouTube link', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', "can't play YouTube or Spotify"],
-    ['a Spotify link', 'https://open.spotify.com/track/abc', "can't play YouTube or Spotify"],
     ['a link into the home network', 'http://home.example/song.mp3', 'public websites'],
     ['a localhost link', 'http://127.0.0.1:8080/song.mp3', 'public websites'],
     ['a web page', 'https://music.example/page', 'web page, not audio'],
@@ -861,14 +860,14 @@ function click(message, customId, member = alex) {
     ['a Twitch channel', 'https://www.twitch.tv/somestreamer', 'only play Twitch clips'],
   ]) {
     await check(`/play ${label} -> refused privately, nothing joined`, async () => {
-      const i = await run(musicCommand('play', null, { link }));
+      const i = await run(musicCommand('play', null, { song: link }));
       const last = i.log.at(-1);
       const deleted = i.log.some((l) => l[0] === 'deleteReply');
       return last[0] === 'followUp' && last[1].content.includes(expected) && last[1].flags === MessageFlags.Ephemeral && deleted && joins.length === 0 ? null : JSON.stringify(i.log);
     });
   }
   await check('/play an mp3 link -> joins the voice channel, plays it, posts the Now playing card', async () => {
-    const i = await run(musicCommand('play', null, { link: 'https://music.example/My_Song.mp3' }));
+    const i = await run(musicCommand('play', null, { song: 'https://music.example/My_Song.mp3' }));
     const text = replyText(i);
     if (!text.startsWith('▶️ <@u-admin> started **[My Song](https://music.example/My_Song.mp3)** in <#v1>')) return text;
     if (joins.join() !== 'v1' || player().played.join() !== 'My Song' || resources.at(-1).volume.value !== 0.6) return `${joins} ${player()?.played} ${resources.at(-1)?.volume.value}`;
@@ -880,7 +879,7 @@ function click(message, customId, member = alex) {
       : cardText;
   });
   await check('/play a .m3u playlist -> queued as its stream; the card shows what is next', async () => {
-    const text = replyText(await run(musicCommand('play', null, { link: 'https://music.example/list.m3u' })));
+    const text = replyText(await run(musicCommand('play', null, { song: 'https://music.example/list.m3u' })));
     const track = session().queue[0];
     await new Promise((r) => setImmediate(r));
     const cardText = textOf(session().nowPlaying.message.payload);
@@ -888,7 +887,7 @@ function click(message, customId, member = alex) {
   });
   await check('/play an uploaded file and an X clip -> both queued', async () => {
     await run(musicCommand('play', null, { file: { url: 'https://cdn.discordapp.com/attachments/1/2/Cool_Beat.ogg', name: 'Cool_Beat.ogg', contentType: 'audio/ogg' } }, { user: 'u-fan', canManage: false }));
-    await run(musicCommand('play', null, { link: 'https://x.com/someone/status/1' }));
+    await run(musicCommand('play', null, { song: 'https://x.com/someone/status/1' }));
     const titles = session().queue.map((t) => `${t.kind}:${t.title}`).join(' | ');
     return titles === 'link:list | file:Cool Beat | clip:@someone: a funny clip' ? null : titles;
   });
@@ -990,11 +989,11 @@ function click(message, customId, member = alex) {
   });
   await check('/music-setup voice-channel and queue-limit -> enforced; status lists everything', async () => {
     await run(musicCommand('music-setup', 'queue-limit', { songs: 1 }));
-    await run(musicCommand('play', null, { link: 'https://music.example/My_Song.mp3' }));
-    const full = replyText(await run(musicCommand('play', null, { link: 'https://music.example/My_Song.mp3' })));
+    await run(musicCommand('play', null, { song: 'https://music.example/My_Song.mp3' }));
+    const full = replyText(await run(musicCommand('play', null, { song: 'https://music.example/My_Song.mp3' })));
     if (!full.includes('queue is full (1 songs)')) return full;
     const limited = replyText(await run(musicCommand('music-setup', 'voice-channel', { channel: { id: 'v2' }, allowed: true })));
-    const elsewhere = replyText(await run(musicCommand('play', null, { link: 'https://music.example/My_Song.mp3' })));
+    const elsewhere = replyText(await run(musicCommand('play', null, { song: 'https://music.example/My_Song.mp3' })));
     if (!limited.includes('I can play music in: <#v2>') || !elsewhere.includes('I can only play music in <#v2>')) return `${limited} | ${elsewhere}`;
     await run(musicCommand('music-setup', 'voice-channel', { channel: { id: 'v2' }, allowed: false }));
     const status = replyText(await run(musicCommand('music-setup', 'status')));
@@ -1006,6 +1005,102 @@ function click(message, customId, member = alex) {
     const after = replyText(await run(musicCommand('music', 'queue')));
     return text.includes('stopped the music') && !music.sessions.has('g1') && buttonIds(card.payload).length === 0 && after.includes("I'm not playing anything") ? null : `${text} | ${after}`;
   });
+
+  console.log('\n----- music: YouTube and Spotify -----');
+  // yt-dlp's searches and playlists, and Spotify's embed pages, faked.
+  const ytLists = [];
+  music.engine.youtubeList = async (url, { limit }) => {
+    ytLists.push(url);
+    if (url === 'ytsearch1:nothing at all') return { title: null, entries: [] };
+    if (url.startsWith('ytsearch1:')) return { title: null, entries: [{ id: 'aaaaaaaaaaa', title: `Result for ${url.slice(10)}`, duration: 200 }] };
+    if (url === 'https://www.youtube.com/playlist?list=PLgood') {
+      return { title: 'Road Trip', entries: Array.from({ length: Math.min(limit, 30) }, (_, i) => ({ id: `vid${String(i).padStart(8, '0')}`, title: `Track ${i + 1}`, duration: 180 })) };
+    }
+    throw new Error('ERROR: [youtube:tab] This playlist is private');
+  };
+  const spotifyPage = (entity) => `<html><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { state: { data: { entity } } } } })}</script></html>`;
+  web['https://open.spotify.com/embed/track/4cOdK2wGLETKBW3PvgPWqT'] = {
+    type: 'text/html',
+    body: spotifyPage({ type: 'track', name: 'Never Gonna Give You Up', artists: [{ name: 'Rick Astley' }], duration: 213573 }),
+  };
+  web['https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M'] = {
+    type: 'text/html',
+    body: spotifyPage({
+      type: 'playlist',
+      name: 'Top Hits',
+      trackList: [
+        { uri: 'spotify:track:11hcBLPtbMp4aQI6zGQLub', title: 'Song One', subtitle: 'Singer A,\u00a0Singer B', duration: 225868 },
+        { uri: 'spotify:track:22hcBLPtbMp4aQI6zGQLub', title: 'Song Two', subtitle: 'Singer C', duration: 190000 },
+      ],
+    }),
+  };
+  await run(musicCommand('music-setup', 'queue-limit', { songs: 100 }));
+  const ytReply = async (song) => replyText(await run(musicCommand('play', null, { song })));
+  await check('/play song:<a name> -> searches YouTube and plays the first result', async () => {
+    const text = await ytReply('never gonna give you up');
+    const track = session()?.current;
+    return text.startsWith('▶️ <@u-admin> started **[Result for never gonna give you up](https://www.youtube.com/watch?v=aaaaaaaaaaa)**') &&
+      track.kind === 'youtube' && track.ytdlp === 'https://www.youtube.com/watch?v=aaaaaaaaaaa' && track.duration === 200 && resources.at(-1).metadata === track
+      ? null
+      : `${text} | ${JSON.stringify(track)}`;
+  });
+  await check('/play a YouTube link -> that video, with its title and length (even a youtu.be link without https://)', async () => {
+    const text = await ytReply('youtu.be/dQw4w9WgXcQ?si=share');
+    const track = session().queue.at(-1);
+    return text.includes('added **[Never Gonna Give You Up](https://www.youtube.com/watch?v=dQw4w9WgXcQ)** - #1 in the queue') && track.duration === 213 && track.ytdlp === 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' ? null : text;
+  });
+  await check('/play a YouTube playlist -> every video in it, as many as fit', async () => {
+    const text = await ytReply('https://www.youtube.com/playlist?list=PLgood');
+    return text.includes('added **30 songs** from **Road Trip**') && session().queue.length === 31 && ytLists.at(-1) === 'https://www.youtube.com/playlist?list=PLgood' ? null : text;
+  });
+  await check('/play a video link from inside a playlist -> just that video', async () => {
+    const before = session().queue.length;
+    await ytReply('https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLgood&index=3');
+    return session().queue.length === before + 1 && session().queue.at(-1).title === 'Never Gonna Give You Up' ? null : String(session().queue.length - before);
+  });
+  await check('/play a Spotify song -> shown with its artist, found on YouTube Music when it plays', async () => {
+    const text = await ytReply('https://open.spotify.com/intl-de/track/4cOdK2wGLETKBW3PvgPWqT?si=abc');
+    const track = session().queue.at(-1);
+    return text.includes('added **[Rick Astley - Never Gonna Give You Up](https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT)**') && track.kind === 'spotify' &&
+      track.ytdlp === 'https://music.youtube.com/search?q=Rick%20Astley%20Never%20Gonna%20Give%20You%20Up#songs' && track.duration === 214
+      ? null
+      : `${text} | ${JSON.stringify(track)}`;
+  });
+  await check('/play a Spotify playlist -> all its songs; the queue limit cuts it short', async () => {
+    await run(musicCommand('music-setup', 'queue-limit', { songs: 34 }));
+    const text = await ytReply('spotify:playlist:37i9dQZF1DXcBWIGoYBM5M');
+    const last = session().queue.at(-1);
+    await run(musicCommand('music-setup', 'queue-limit', { songs: 100 }));
+    return text.includes('added **[Singer A, Singer B - Song One](https://open.spotify.com/track/11hcBLPtbMp4aQI6zGQLub)**') && text.includes('(the queue only had room for 1)') && last.title === 'Singer A, Singer B - Song One' ? null : text;
+  });
+  for (const [label, song, expected] of [
+    ['a search that finds nothing', 'nothing at all', 'I couldn\'t find "nothing at all" on YouTube'],
+    ['a private YouTube playlist', 'https://www.youtube.com/playlist?list=PLsecret', "Couldn't open that playlist"],
+    ['an age-restricted video', 'https://www.youtube.com/watch?v=AgeLimited1', 'age-restricted'],
+    ['a YouTube channel page', 'https://www.youtube.com/@somebody', "doesn't go to a video or a playlist"],
+    ['a Spotify podcast', 'https://open.spotify.com/episode/4cOdK2wGLETKBW3PvgPWqT', 'not podcasts or artist pages'],
+    ['a deleted Spotify song', 'https://open.spotify.com/track/0000000000000000000000', "Couldn't open that on Spotify"],
+  ]) {
+    await check(`/play ${label} -> explained privately`, async () => {
+      const i = await run(musicCommand('play', null, { song }));
+      const last = i.log.at(-1);
+      return last[0] === 'followUp' && last[1].content.includes(expected) && last[1].flags === MessageFlags.Ephemeral ? null : JSON.stringify(last);
+    });
+  }
+  await check('the card and queue show song lengths and where a song is from', async () => {
+    player().finish(60_000); // the search result ends; the YouTube video starts
+    await new Promise((r) => setImmediate(r));
+    const card = textOf(session().nowPlaying.message.payload);
+    const queue = textOf(json(answer(await run(musicCommand('music', 'queue')))));
+    return card.includes('⏱️ 3:33') && queue.includes('**1.** [Track 1](https://www.youtube.com/watch?v=vid00000000) `3:00`') && queue.includes('🟢') === false ? null : `${card}\n${queue}`;
+  });
+  await check("a YouTube song that won't play -> says why, and the next one starts", async () => {
+    player().finish(100);
+    await new Promise((r) => setImmediate(r));
+    const warning = sent().find((m) => m.payload.content?.includes("YouTube wouldn't play it"));
+    return warning?.payload.content.includes('**Never Gonna Give You Up**') && session().current.title === 'Track 1' ? null : sent().map((m) => m.payload.content).filter(Boolean).join(' | ');
+  });
+  await run(musicCommand('music', 'stop'));
 
   console.log('\n----- /access -----');
   const asMember = (name, { roleIds = [], canManage = false, channelId = 'c1', channelObj } = {}) => {
@@ -1114,7 +1209,7 @@ function click(message, customId, member = alex) {
   });
   await check('/help topic:music -> what it is, how to start, every command with who can use it', async () => {
     const text = textOf(json(answer(await run(helpCommand('music')))));
-    const needed = ['## 🎵 Music', '### 🚀 How to start', '**/play** `link?` `file?`', '› `volume` - Set the volume', '**/music-setup**', '🔒 Needs **Manage Server**', '👥 Everyone', '### 🏠 In this server'];
+    const needed = ['## 🎵 Music', '### 🚀 How to start', '**/play** `song?` `file?`', '› `volume` - Set the volume', '**/music-setup**', '🔒 Needs **Manage Server**', '👥 Everyone', '### 🏠 In this server'];
     return needed.every((n) => text.includes(n)) ? null : text;
   });
   await check('/help topic:/mod -> every subcommand and option spelled out', async () => {

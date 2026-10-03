@@ -6,6 +6,7 @@ const { version: BOT_VERSION } = require('./package.json');
 const { takeLock } = require('./instance');
 const { getGuildSettings, updateGuildSettings } = require('./settings');
 const { saveFlaggedCard, getFlaggedCard, forgetFlaggedCard } = require('./flagged');
+const ytdlp = require('./ytdlp');
 // Server features beyond fixing links, one file each in features/.
 const roles = require('./features/roles');
 const expressions = require('./features/expressions');
@@ -2561,7 +2562,17 @@ client.once(Events.ClientReady, async (readyClient) => {
   logs.init(client);
   welcome.init({ membersIntentOn: () => client.options.intents.has(GatewayIntentBits.GuildMembers) });
   // The music player plays the sound of the same clips the cards show.
-  music.init({ client, request, clipAudioFor });
+  music.init({
+    client,
+    request,
+    clipAudioFor,
+    youtubeVideo: async (id) => {
+      const video = await fetchYouTube(id);
+      return { title: video.title, seconds: video.seconds ?? null, live: video.live === 'live', ageRestricted: video.ageRestricted };
+    },
+  });
+  // yt-dlp (YouTube and Spotify audio): downloaded once, then kept up to date.
+  if (isMainProgram) ytdlp.start();
   // Alerts reuse the Twitch and YouTube cards from this file.
   alerts.init({
     client,
