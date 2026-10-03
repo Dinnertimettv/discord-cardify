@@ -9,7 +9,7 @@
     "start": "node index.js",
     "status": "node scripts/bot-control.js status",
     "stop": "node scripts/bot-control.js stop",
-    "test": "node test/harness.js && node test/restart-test.js",
+    "test": "node test/harness.js && node test/restart-test.js && node test/features-test.js",
     "test:live": "node test/live.js",
     "clean:test": "node scripts/clean-test-channel.js"
   },

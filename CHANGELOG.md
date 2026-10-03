@@ -17,6 +17,30 @@ Cardify grows from a link bot into an all-in-one server bot.
 - **🌐 Translate** on X posts that aren't in the server's language:
   translates into the clicker's own Discord language, privately.
 
+**Role panels** (`/roles`, needs Manage Roles)
+- `/roles create` posts a panel members use to give themselves roles, in
+  the style you choose: **buttons**, a **dropdown menu**, or **emoji
+  reactions** - optionally "one at a time" (picking a role drops the
+  panel's others).
+- `/roles add` / `/roles remove` change a panel's roles (with an emoji and
+  label each); `/roles list` shows the server's panels.
+- Safe by design: a panel never hands out roles with moderator-level
+  permissions, bot roles, or roles above Cardify's own - checked when
+  they're added and again on every click.
+- Panels keep working after restarts (saved in `data/roles.json`).
+
+**Emojis and soundboard**
+- `/emoji add` adds an emoji from an uploaded image, an https link, or by
+  copying another server's emoji.
+- `/sound add` adds an MP3 or OGG file to the soundboard, with an optional
+  emoji and volume.
+
+### Permissions
+
+- **Manage Roles** (and Cardify's role above the roles it hands out) - for
+  role panels.
+- **Create Expressions** - for `/emoji` and `/sound`.
+
 ## 2.0.0 - September 27, 2026
 
 A ground-up overhaul: every shared post now becomes a clean card built by the

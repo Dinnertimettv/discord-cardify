@@ -345,7 +345,7 @@ function fakeInteraction(customId, sent, { userId = '222222222222222222', isMod 
     message, deferred: false, replied: false, isButton: () => true,
     deferReply: async (o) => { i.deferred = true; log.push(`deferReply(flags=${o?.flags})`); },
     deferUpdate: async () => { i.deferred = true; log.push('deferUpdate'); },
-    isChatInputCommand: () => false,
+    isChatInputCommand: () => false, isStringSelectMenu: () => false,
     editReply: async (p) => log.push(['editReply', validate(p)]),
     reply: async (p) => { i.replied = true; log.push(['reply', validate(p)]); },
     followUp: async (p) => log.push(['followUp', validate(p)]),

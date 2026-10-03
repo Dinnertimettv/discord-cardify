@@ -6,6 +6,10 @@ const { version: BOT_VERSION } = require('./package.json');
 const { takeLock } = require('./instance');
 const { getGuildSettings, updateGuildSettings } = require('./settings');
 const { saveFlaggedCard, getFlaggedCard, forgetFlaggedCard } = require('./flagged');
+// Server features beyond fixing links, one file each in features/.
+const roles = require('./features/roles');
+const expressions = require('./features/expressions');
+const FEATURES = [roles, expressions];
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -199,8 +203,11 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     // Which voice channel someone is in, for the "Watch Together" button.
     GatewayIntentBits.GuildVoiceStates,
+    // Reactions on role panels.
+    GatewayIntentBits.GuildMessageReactions,
   ],
-  partials: [Partials.Message, Partials.Channel],
+  // Reaction and User let reactions on messages from before a restart through.
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User],
 });
 
 // ---------------------------------------------------------------------------
@@ -1804,6 +1811,7 @@ const BUTTON_HANDLERS = {
   'copy-tw': { run: copyTwitchLink, failMessage: "Couldn't get that link." },
   'copy-yt': { run: copyYouTubeLink, failMessage: "Couldn't get that link." },
   'watch-yt': { run: watchOnDiscord, failMessage: "Couldn't open that video." },
+  role: { run: (interaction, roleId) => roles.handleButton(interaction, roleId), failMessage: "Couldn't change your role - try again in a moment." },
   'x-thread': { run: postThread, failMessage: `Couldn't post the thread - ${DELETED_OR_PRIVATE}` },
   dl: { run: downloadVideo, failMessage: `Couldn't get the video - ${DELETED_OR_PRIVATE}` },
   'translate-x': { run: translatePost, failMessage: "Couldn't translate that post right now - try again in a moment." },
@@ -1829,6 +1837,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
       console.error('/embeds failed:', err);
       await replyPrivately(interaction, "Couldn't change that setting - check the bot's log.").catch(() => {});
     }
+    return;
+  }
+  if (interaction.isChatInputCommand()) {
+    try {
+      for (const feature of FEATURES) if (await feature.handleCommand(interaction)) return;
+    } catch (err) {
+      console.error(`/${interaction.commandName} failed:`, err);
+      await replyPrivately(interaction, 'Something went wrong - check the bot\'s log.').catch(() => {});
+    }
+    return;
+  }
+  if (interaction.isStringSelectMenu() && interaction.customId === 'role-menu') {
+    await roles.handleSelect(interaction).catch(async (err) => {
+      console.error('Role menu failed:', err);
+      await replyPrivately(interaction, "Couldn't change your roles - try again in a moment.").catch(() => {});
+    });
     return;
   }
   if (!interaction.isButton()) return;
@@ -2437,7 +2461,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   await leaveUnlistedServers();
   if (TEST_WEBHOOK_ID) console.log('Test webhook posts (test/live.js) are handled like normal messages.');
   // Global command, so it shows up in every server the bot is in.
-  await client.application?.commands.set([EMBEDS_COMMAND]).catch((err) => {
+  await client.application?.commands.set([EMBEDS_COMMAND, ...FEATURES.flatMap((feature) => feature.commands)]).catch((err) => {
     console.error(
       "Couldn't register the /embeds command (the bot may need re-inviting with the applications.commands scope):",
       err.message
@@ -2448,6 +2472,20 @@ client.once(Events.ClientReady, async (readyClient) => {
   await closeOldReplyThreads();
   setInterval(() => closeOldReplyThreads().catch((err) => console.error('Reply thread cleanup failed:', err)), REPLY_THREAD_CHECK_MS);
 });
+
+// Reactions on role panels give and take roles.
+for (const [event, added] of [
+  [Events.MessageReactionAdd, true],
+  [Events.MessageReactionRemove, false],
+]) {
+  client.on(event, (reaction, user) => {
+    if (!isAllowedServer(reaction.message.guildId)) return;
+    roles.handleReaction(reaction, user, added).catch((err) => console.error('Role panel reaction failed:', err));
+  });
+}
+
+// A deleted role panel message takes its panel with it.
+client.on(Events.MessageDelete, (message) => roles.forgetDeletedPanel(message.id));
 
 // Added to a server that isn't on ALLOWED_GUILD_IDS: leave it straight away.
 client.on(Events.GuildCreate, async (guild) => {
