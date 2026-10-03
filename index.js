@@ -10,7 +10,10 @@ const { saveFlaggedCard, getFlaggedCard, forgetFlaggedCard } = require('./flagge
 const roles = require('./features/roles');
 const expressions = require('./features/expressions');
 const alerts = require('./features/alerts');
-const FEATURES = [roles, expressions, alerts];
+const logs = require('./features/logs');
+const moderation = require('./features/moderation');
+const automod = require('./features/automod');
+const FEATURES = [roles, expressions, alerts, logs, moderation, automod];
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -22,6 +25,7 @@ const {
   EmbedBuilder,
   Events,
   GatewayIntentBits,
+  IntentsBitField,
   InteractionContextType,
   InviteTargetType,
   MediaGalleryBuilder,
@@ -206,6 +210,10 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     // Reactions on role panels.
     GatewayIntentBits.GuildMessageReactions,
+    // Bans and unbans, for the mod log.
+    GatewayIntentBits.GuildModeration,
+    // GuildMembers (joins and leaves) is added at login, only when it's turned
+    // on in the Developer Portal - see enableMemberEvents.
   ],
   // Reaction and User let reactions on messages from before a restart through.
   partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User],
@@ -1382,6 +1390,7 @@ async function fixLinks(message, links) {
   );
 
   // The clean version is up, so remove the cluttered original.
+  logs.ignoreDeletion(message.id);
   await message.delete().catch((err) => {
     console.error('Fixed embed posted, but could not delete the original message:', err.message);
   });
@@ -2468,6 +2477,7 @@ client.once(Events.ClientReady, async (readyClient) => {
       err.message
     );
   });
+  logs.init(client);
   // Alerts reuse the Twitch and YouTube cards from this file.
   alerts.init({
     client,
@@ -2498,8 +2508,47 @@ for (const [event, added] of [
   });
 }
 
-// A deleted role panel message takes its panel with it.
-client.on(Events.MessageDelete, (message) => roles.forgetDeletedPanel(message.id));
+// A deleted role panel message takes its panel with it; deletions and edits
+// go in the mod log.
+client.on(Events.MessageDelete, (message) => {
+  roles.forgetDeletedPanel(message.id);
+  if (isAllowedServer(message.guildId)) logs.messageDeleted(message)?.catch((err) => console.error('Mod log (delete) failed:', err));
+});
+client.on(Events.MessageUpdate, (before, after) => {
+  if (isAllowedServer(after.guildId)) logs.messageEdited(before, after)?.catch((err) => console.error('Mod log (edit) failed:', err));
+});
+for (const [event, report] of [
+  [Events.GuildBanAdd, logs.memberBanned],
+  [Events.GuildBanRemove, logs.memberUnbanned],
+  // These two only fire with the Server Members intent (see enableMemberEvents).
+  [Events.GuildMemberAdd, logs.memberJoined],
+  [Events.GuildMemberRemove, logs.memberLeft],
+]) {
+  client.on(event, (subject) => {
+    if (isAllowedServer(subject.guild.id)) report(subject).catch((err) => console.error(`Mod log (${event}) failed:`, err));
+  });
+}
+
+// The Server Members intent is "privileged": Discord refuses to log in with it
+// unless it's switched on in the Developer Portal (Bot → Server Members
+// Intent). So it's only asked for when the app's settings say it's on.
+async function enableMemberEvents() {
+  const GATEWAY_GUILD_MEMBERS = 1 << 14;
+  const GATEWAY_GUILD_MEMBERS_LIMITED = 1 << 15;
+  const res = await request('https://discord.com/api/v10/applications/@me', {
+    headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` },
+  }).catch(() => null);
+  const flags = (await res?.json().catch(() => null))?.flags ?? 0;
+  if (flags & (GATEWAY_GUILD_MEMBERS | GATEWAY_GUILD_MEMBERS_LIMITED)) {
+    // The intents are frozen, but replacing them before login works - they're read when connecting.
+    client.options.intents = new IntentsBitField(client.options.intents.bitfield | GatewayIntentBits.GuildMembers).freeze();
+    console.log('Server Members intent is on - member joins and leaves are tracked.');
+  } else {
+    console.log(
+      'Server Members intent is off in the Developer Portal - joins and leaves (mod log, welcome messages) are skipped until it is turned on.'
+    );
+  }
+}
 
 // Added to a server that isn't on ALLOWED_GUILD_IDS: leave it straight away.
 client.on(Events.GuildCreate, async (guild) => {
@@ -2555,6 +2604,7 @@ async function start() {
     }
   }
   try {
+    if (isMainProgram) await enableMemberEvents();
     await client.login(process.env.DISCORD_TOKEN);
   } catch (err) {
     console.error('Failed to log in to Discord - check DISCORD_TOKEN in .env:', err.message);

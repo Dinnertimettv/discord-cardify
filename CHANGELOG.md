@@ -46,11 +46,35 @@ Cardify grows from a link bot into an all-in-one server bot.
   official feed). Adding an alert never posts a backlog, and only the
   alert's own role (or an @everyone in its text) gets pinged.
 
+**Moderation** (`/mod`)
+- `warn`, `warnings`, `clear-warnings`, `timeout` (60 seconds to a week),
+  `untimeout`, `kick`, `ban` (optionally deleting their recent messages),
+  `unban`, and `purge` (up to 100 recent messages, optionally one member's).
+- Each needs the matching permission (Timeout / Kick / Ban Members, Manage
+  Messages), never acts on the owner, yourself, Cardify, or anyone with an
+  equal or higher role, and DMs the member the reason when it can.
+
+**Auto-mod** (`/automod`, needs Manage Server)
+- Sets up Discord's own AutoMod rules: blocked words (with wildcards),
+  invite links to other servers, spam, a mention limit, and Discord's
+  profanity / slur / sexual-content lists - enforced by Discord instantly,
+  even while Cardify is offline. `/automod status` shows what's on.
+
+**Mod log** (`/logs set`)
+- A channel that records deleted and edited messages (with the text),
+  bans and unbans, every `/mod` and `/automod` action, messages AutoMod
+  blocks, and members joining (with account age) and leaving. Messages
+  Cardify deletes itself when reposting links aren't logged.
+- Joins and leaves need the **Server Members Intent** (Developer Portal →
+  Bot); Cardify checks at startup and uses it only when it's on.
+
 ### Permissions
 
 - **Manage Roles** (and Cardify's role above the roles it hands out) - for
   role panels.
 - **Create Expressions** - for `/emoji` and `/sound`.
+- **Timeout / Kick / Ban Members** and **Manage Messages** - for `/mod`.
+- **Manage Server** - for `/automod`.
 
 ## 2.0.0 - September 27, 2026
 

@@ -11,6 +11,9 @@ const discord = require('discord.js');
 const roles = require('../features/roles');
 const expressions = require('../features/expressions');
 const alerts = require('../features/alerts');
+const logs = require('../features/logs');
+const moderation = require('../features/moderation');
+const automod = require('../features/automod');
 
 const { PermissionFlagsBits, PermissionsBitField, ComponentType, MessageFlags } = discord;
 let failures = 0;
@@ -101,6 +104,8 @@ function command(name, sub, options = {}, { canManage = true, permission } = {})
       getRole: (n) => (options[n] ? guild.roles.cache.get(options[n]) : null),
       getAttachment: (n) => options[n] ?? null,
       getChannel: (n) => options[n] ?? null,
+      getMember: (n) => (options[n]?.member ? options[n] : null),
+      getUser: (n) => (options[n] ? options[n].user ?? options[n] : null),
     },
     deferReply: async (o) => { interaction.deferred = true; log.push(['deferReply', o]); },
     reply: async (p) => { interaction.replied = true; log.push(['reply', p]); },
@@ -110,7 +115,7 @@ function command(name, sub, options = {}, { canManage = true, permission } = {})
 }
 const answer = (interaction) => interaction.log.findLast((l) => l[0] === 'reply' || l[0] === 'editReply')?.[1];
 const run = async (interaction) => {
-  for (const feature of [roles, expressions, alerts]) if (await feature.handleCommand(interaction)) return interaction;
+  for (const feature of [roles, expressions, alerts, logs, moderation, automod]) if (await feature.handleCommand(interaction)) return interaction;
   throw new Error(`no feature handled /${interaction.commandName}`);
 };
 
@@ -415,6 +420,197 @@ function click(message, customId, member = alex) {
   });
   await check('Twitch names from links are cleaned up', async () =>
     ([alerts.twitchLoginFrom('https://twitch.tv/Name_1/videos'), alerts.twitchLoginFrom('name_1'), alerts.twitchLoginFrom('bad name')].join() === 'name_1,name_1,' ? null : 'wrong'));
+
+  console.log('\n----- mod log -----');
+  const modLog = { id: 'c-modlog', sent: [], permissionsFor: () => ({ has: () => true }), send: async (p) => modLog.sent.push(json(p)) };
+  guild.channels.cache.set('c-modlog', modLog);
+  logs.init({ channels: { fetch: async (id) => guild.channels.cache.get(id) } });
+  const lastLog = () => textOf(modLog.sent.at(-1));
+
+  await check('/logs set without Manage Server -> refused', async () => {
+    const i = await run(command('logs', 'set', { channel: modLog }, { canManage: false }));
+    return answer(i).content.includes('Manage Server') ? null : answer(i).content;
+  });
+  await check('/logs set -> saved, confirmed, and a first entry posted', async () => {
+    const i = await run(command('logs', 'set', { channel: modLog }));
+    return answer(i).content.startsWith('The mod log now goes to <#c-modlog>') && lastLog().startsWith('📋 **Mod log turned on** by <@u-admin>.') ? null : answer(i).content;
+  });
+  const sentMessage = (id, content, extra = {}) => ({ id, guildId: 'g1', channelId: 'c1', content, partial: false, author: { id: 'u-alex', bot: false }, attachments: new Map(), url: `https://discord.com/channels/g1/c1/${id}`, ...extra });
+  await check('a deleted message -> logged with who sent it and its text', async () => {
+    await logs.messageDeleted(sentMessage('m1', 'oops wrong channel'));
+    return lastLog().startsWith('🗑️ **Message deleted** in <#c1> · sent by <@u-alex>\n> oops wrong channel') ? null : lastLog();
+  });
+  await check("messages Cardify deletes itself (link reposts), bots' messages, and unknown old messages -> not logged", async () => {
+    const before = modLog.sent.length;
+    logs.ignoreDeletion('m2');
+    await logs.messageDeleted(sentMessage('m2', 'https://x.com/a/status/1'));
+    await logs.messageDeleted(sentMessage('m3', 'beep', { author: { id: 'bot', bot: true } }));
+    await logs.messageDeleted(sentMessage('m4', null, { partial: true }));
+    return modLog.sent.length === before ? null : lastLog();
+  });
+  await check('an edited message -> before and after; a link preview loading in (same text) -> not logged', async () => {
+    await logs.messageEdited(sentMessage('m5', 'teh plan'), sentMessage('m5', 'the plan'));
+    const edited = lastLog();
+    const before = modLog.sent.length;
+    await logs.messageEdited(sentMessage('m5', 'the plan'), sentMessage('m5', 'the plan'));
+    return edited.includes('**Before**\n> teh plan\n**After**\n> the plan') && modLog.sent.length === before ? null : edited;
+  });
+
+  console.log('\n----- /mod -----');
+  const position = (n) => ({ highest: { position: n } });
+  const makeTarget = (id, name, { rolePosition = 1, timedOut = false } = {}) => {
+    const actions = [];
+    const target = {
+      id, user: { id, tag: `${name}#0001`, send: async (p) => actions.push(`dm: ${p.content}`) },
+      roles: position(rolePosition), moderatable: true, kickable: true, bannable: true, actions,
+      isCommunicationDisabled: () => timedOut,
+      timeout: async (ms, why) => actions.push(`timeout ${ms} (${why})`),
+      kick: async (why) => actions.push(`kick (${why})`),
+    };
+    target.member = target;
+    return target;
+  };
+  const bans = [];
+  guild.ownerId = 'u-owner';
+  guild.members.ban = async (id, o) => bans.push({ id, ...o });
+  guild.members.unban = async (id) => bans.push({ unban: id });
+  guild.bans = { fetch: async (id) => (id === 'u-banned' ? { user: { id } } : Promise.reject(new Error('Unknown Ban'))) };
+  const modCommand = (sub, options, { perms = 'all', modPosition = 5 } = {}) => {
+    const i = command('mod', sub, options);
+    i.memberPermissions = { has: (p) => perms === 'all' || perms.includes(p) };
+    i.member = { roles: position(modPosition) };
+    i.client = { user: { id: 'u-cardify' } };
+    return i;
+  };
+  const sam = makeTarget('u-sam', 'sam');
+  await check('/mod warn -> saved as warning #1, member DMed, mod log entry', async () => {
+    const i = await run(modCommand('warn', { member: sam, reason: 'spamming memes' }));
+    if (answer(i).content !== 'Warned <@u-sam> - that\'s warning #1.') return answer(i).content;
+    return sam.actions.join() === 'dm: ⚠️ You were warned in **Test Server**: spamming memes' && lastLog().startsWith('⚠️ <@u-admin> **warned** <@u-sam> (warning #1)\n> spamming memes') ? null : sam.actions.join();
+  });
+  await run(modCommand('warn', { member: sam, reason: 'again' }));
+  await check('/mod warnings -> both warnings listed', async () => {
+    const text = answer(await run(modCommand('warnings', { member: sam }))).content;
+    return text.startsWith('<@u-sam> has 2 warning(s):') && text.includes('by <@u-admin>: spamming memes') && text.includes('by <@u-admin>: again') ? null : text;
+  });
+  await check('/mod clear-warnings -> cleared and logged', async () => {
+    const text = answer(await run(modCommand('clear-warnings', { member: sam }))).content;
+    const after = answer(await run(modCommand('warnings', { member: sam }))).content;
+    return text === 'Cleared 2 warning(s) of <@u-sam>.' && after === '<@u-sam> has no warnings.' ? null : `${text} | ${after}`;
+  });
+  await check('/mod timeout 10 minutes -> timed out with the reason, DMed, logged', async () => {
+    sam.actions.length = 0;
+    const i = await run(modCommand('timeout', { member: sam, duration: '10m', reason: 'cool off' }));
+    return answer(i).content === 'Timed out <@u-sam> for 10 minutes.' && sam.actions[0] === 'timeout 600000 (admin#0001: cool off)' && lastLog().includes('**timed out** <@u-sam> for 10 minutes') ? null : sam.actions.join();
+  });
+  for (const [label, sub, options, opts, expect] of [
+    ['without Kick Members', 'kick', { member: sam }, { perms: [PermissionFlagsBits.ModerateMembers] }, 'You need the **Kick Members** permission'],
+    ['on someone with a higher role', 'kick', { member: makeTarget('u-boss', 'boss', { rolePosition: 9 }) }, {}, 'same or a higher role than you'],
+    ['on the server owner', 'ban', { member: makeTarget('u-owner', 'owner') }, {}, 'Nobody can ban the server owner'],
+    ['on yourself', 'timeout', { member: makeTarget('u-admin', 'me'), duration: '60s' }, {}, "You can't time out yourself"],
+    ['on Cardify', 'kick', { member: makeTarget('u-cardify', 'cardify') }, {}, "I can't kick myself"],
+    ['when Cardify\'s role is too low', 'kick', { member: { ...makeTarget('u-x', 'x'), kickable: false, get member() { return this; } } }, {}, 'my role needs to be above theirs'],
+    ['untimeout on someone not timed out', 'untimeout', { member: makeTarget('u-y', 'y') }, {}, "isn't timed out"],
+    ['unban on someone not banned', 'unban', { member: { id: 'u-nobody' } }, {}, "isn't banned"],
+  ]) {
+    await check(`/mod ${sub} ${label} -> refused`, async () => {
+      const i = await run(modCommand(sub, options, opts));
+      return answer(i).content.includes(expect) ? null : answer(i).content;
+    });
+  }
+  await check('/mod kick -> DMed first, then kicked, logged', async () => {
+    const kim = makeTarget('u-kim', 'kim');
+    const i = await run(modCommand('kick', { member: kim, reason: 'rule 3' }));
+    return answer(i).content === 'Kicked <@u-kim>.' && kim.actions.join() === 'dm: 👢 You were kicked from **Test Server**: rule 3,kick (admin#0001: rule 3)' ? null : kim.actions.join();
+  });
+  await check('/mod ban someone not in the server (by ID), deleting 2 days of messages', async () => {
+    const i = await run(modCommand('ban', { member: { id: 'u-raider' }, reason: 'raid', 'delete-days': 2 }));
+    const [ban] = bans;
+    return answer(i).content === 'Banned <@u-raider> and deleted their messages from the last 2 day(s).' && ban.deleteMessageSeconds === 172800 && ban.reason === 'admin#0001: raid' ? null : JSON.stringify(ban);
+  });
+  await check('/mod unban -> unbanned', async () => {
+    const i = await run(modCommand('unban', { member: { id: 'u-banned' } }));
+    return answer(i).content.startsWith('Unbanned <@u-banned>') && bans[1].unban === 'u-banned' ? null : answer(i).content;
+  });
+  await check('ban events -> in the mod log with the reason', async () => {
+    await logs.memberBanned({ guild, user: { id: 'u-raider', tag: 'raider#0001' }, reason: 'admin#0001: raid' });
+    return lastLog().startsWith('🔨 <@u-raider> (raider#0001) **was banned**\n> admin#0001: raid') ? null : lastLog();
+  });
+  await check('/mod purge 50 messages from one member -> only theirs, pins kept, their deletions not logged one by one', async () => {
+    const fetched = new Map([
+      ['p1', { id: 'p1', author: { id: 'u-sam' }, pinned: false }],
+      ['p2', { id: 'p2', author: { id: 'u-alex' }, pinned: false }],
+      ['p3', { id: 'p3', author: { id: 'u-sam' }, pinned: true }],
+      ['p4', { id: 'p4', author: { id: 'u-sam' }, pinned: false }],
+    ]);
+    fetched.filter = function (fn) { return Object.assign(new Map([...this].filter(([, v]) => fn(v))), { filter: this.filter }); };
+    let bulk = null;
+    channel.messages.fetch = async (arg) => (typeof arg === 'object' ? fetched : messages.get(arg));
+    channel.bulkDelete = async (doomed) => { bulk = [...doomed.keys()]; return doomed; };
+    const i = await run(modCommand('purge', { count: 50, member: sam }));
+    const before = modLog.sent.length;
+    await logs.messageDeleted(sentMessage('p1', 'gone'));
+    return answer(i).content === 'Deleted 2 message(s).' && bulk.join() === 'p1,p4' && modLog.sent.length === before ? null : `${answer(i).content} ${bulk}`;
+  });
+
+  console.log('\n----- /automod -----');
+  const rules = new Map();
+  guild.autoModerationRules = {
+    fetch: async () => Object.assign(new Map(rules), { find(fn) { return [...this.values()].find(fn); } }),
+    create: async (data) => {
+      const rule = { id: `rule${rules.size}`, ...structuredClone(data), edits: 0 };
+      rule.edit = async (changes) => { Object.assign(rule, structuredClone(changes)); rule.edits++; return rule; };
+      rules.set(rule.id, rule);
+      return rule;
+    },
+  };
+  const ruleNamed = (name) => [...rules.values()].find((r) => r.name === name);
+  await check('/automod words-add -> a Discord AutoMod keyword rule that blocks and reports to the mod log', async () => {
+    const i = await run(command('automod', 'words-add', { words: 'Badword, *slur*, badword' }));
+    const rule = ruleNamed('Cardify · Blocked words');
+    if (answer(i).content !== 'Blocking 2 word(s) now.') return answer(i).content;
+    if (rule.triggerType !== 1 || rule.eventType !== 1 || rule.triggerMetadata.keywordFilter.join() !== 'badword,*slur*') return JSON.stringify(rule);
+    return rule.actions.map((a) => `${a.type}:${a.metadata.channel ?? a.metadata.customMessage}`).join() === "1:That message was blocked by this server's word filter.,2:c-modlog" ? null : JSON.stringify(rule.actions);
+  });
+  await check('/automod words-add again -> same rule, words merged; words-remove -> removed', async () => {
+    await run(command('automod', 'words-add', { words: 'third' }));
+    await run(command('automod', 'words-remove', { words: 'badword' }));
+    const rule = ruleNamed('Cardify · Blocked words');
+    return rules.size === 1 && rule.triggerMetadata.keywordFilter.join() === '*slur*,third' ? null : JSON.stringify(rule.triggerMetadata);
+  });
+  await check('/automod words-list -> spoilered list', async () => {
+    const text = answer(await run(command('automod', 'words-list'))).content;
+    return text === 'Blocked (2): ||*slur*||, ||third||' ? null : text;
+  });
+  await check('/automod invites, spam, mentions 5, profanity -> the matching Discord rule types', async () => {
+    await run(command('automod', 'invites', { on: true }));
+    await run(command('automod', 'spam', { on: true }));
+    await run(command('automod', 'mentions', { limit: 5 }));
+    await run(command('automod', 'profanity', { on: true }));
+    const invites = ruleNamed('Cardify · Invite links');
+    const mentions = ruleNamed('Cardify · Mass mentions');
+    const profanity = ruleNamed('Cardify · Profanity & slurs');
+    if (!invites.triggerMetadata.regexPatterns[0].startsWith('discord(?:')) return JSON.stringify(invites.triggerMetadata);
+    if (ruleNamed('Cardify · Spam').triggerType !== 3 || mentions.triggerType !== 5 || mentions.triggerMetadata.mentionTotalLimit !== 5) return 'spam/mentions wrong';
+    return profanity.triggerType === 4 && profanity.triggerMetadata.presets.join() === '1,3,2' ? null : JSON.stringify(profanity.triggerMetadata);
+  });
+  await check('/automod spam off -> the rule is disabled, not deleted', async () => {
+    await run(command('automod', 'spam', { on: false }));
+    const spam = ruleNamed('Cardify · Spam');
+    return spam && spam.enabled === false ? null : JSON.stringify(spam);
+  });
+  await check('/automod status -> each rule on or off', async () => {
+    const text = answer(await run(command('automod', 'status'))).content;
+    return text.includes('🟢 **Blocked words** (2 words)') && text.includes('⚫ **Spam** - off') && text.includes('🟢 **Mass mentions** (max 5)') && text.includes('<#c-modlog>') ? null : text;
+  });
+  await check("Discord refusing (missing permission) -> explained", async () => {
+    const saved = guild.autoModerationRules.create;
+    guild.autoModerationRules.fetch = async () => Object.assign(new Map(), { find: () => undefined });
+    guild.autoModerationRules.create = async () => { throw Object.assign(new Error('Missing Permissions'), { code: 50013 }); };
+    const i = await run(command('automod', 'invites', { on: true }));
+    guild.autoModerationRules.create = saved;
+    return answer(i).content.includes('Manage Server') ? null : answer(i).content;
+  });
 
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL FEATURE TESTS PASSED');
   process.exit(failures ? 1 : 0);
