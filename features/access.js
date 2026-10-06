@@ -24,7 +24,7 @@ const FEATURES = [
   { key: 'music', emoji: '🎵', name: 'Music', short: 'Plays songs, radio and clips in voice channels', commands: ['play', 'radio', 'music', 'music-setup'], settings: 'music-setup' },
   { key: 'tempvoice', emoji: '➕', name: 'Join to Create', short: 'Join one voice channel to get your own voice channel, gone when everyone leaves', commands: ['join-to-create'], settings: 'join-to-create' },
 ];
-const ALWAYS_ALLOWED = new Set(['help', 'setup', 'access']);
+const ALWAYS_ALLOWED = new Set(['help', 'setup', 'access', 'restart']);
 const featureByKey = new Map(FEATURES.map((feature) => [feature.key, feature]));
 const featureOfCommand = new Map(FEATURES.flatMap((feature) => feature.commands.map((command) => [command, feature])));
 

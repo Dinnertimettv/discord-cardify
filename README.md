@@ -323,6 +323,7 @@ Set in `.env`:
 | `PAYWALL_FIX_URL` | Prefix for the unverified bypass-attempt link shown when no archive.ph snapshot is found | `https://www.removepaywall.com/search?url=` |
 | `ARCHIVE_PH_ENABLED` | Try archive.ph for a verified existing snapshot   | `true` |
 | `ARCHIVE_PH_TIMEOUT_MS` | Max time to wait on an archive.ph lookup before giving up | `8000` |
+| `BOT_OWNER_IDS` | Comma-separated user IDs who can use `/restart`, besides the app's owner (or its team) | *(owner only)* |
 
 ## Running and testing
 
@@ -331,6 +332,16 @@ Set in `.env`:
   whether it's running, and `npm run stop` stops it - even a copy running
   in the background with no window. Output is also written to
   `logs/bot.log` with timestamps.
+- `npm run background` runs the bot with no window under a keep-alive
+  (`scripts/keep-alive.js`) that starts it again whenever it stops - after
+  a crash it waits 5 seconds, doubling up to 5 minutes while it keeps
+  crashing. `npm run autostart` (Windows) also starts it when you log in;
+  `npm run autostart -- off` undoes that. Its own log is
+  `logs/keep-alive.log`. `npm run stop` stops the keep-alive and the bot.
+- `/restart` (in a server or a DM with the bot) restarts it from Discord -
+  only for the app's owner (or its team) and anyone in `BOT_OWNER_IDS`.
+  It only works under the keep-alive; the reply changes to "back online"
+  once the bot is up again.
 - `npm test` runs an offline simulation of Discord - quick, safe, no posts.
 - `npm run test:live -- "some text https://x.com/..."` posts a real test
   message into the private #bot-testing channel (through the webhook in
@@ -345,8 +356,9 @@ Set in `.env`:
 - Works for any number of tweet links in a single message.
 - If the bot lacks Manage Messages permission, it still posts the fixed
   link — it just won't be able to hide the original broken embed.
-- To run this continuously, host it on a small VPS or a process manager
-  like `pm2` (`pm2 start index.js --name cardify`).
+- To run this continuously, use `npm run background` (above), or host it
+  on a small VPS or a process manager like `pm2`
+  (`pm2 start scripts/keep-alive.js --name spork`).
 
 ## License
 

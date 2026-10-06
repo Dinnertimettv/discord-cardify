@@ -27,7 +27,7 @@ const HELP_COMMAND = new SlashCommandBuilder()
   .addStringOption((o) => o.setName('topic').setDescription('A feature or command to learn about').setAutocomplete(true));
 
 // The admin tools get a page too.
-const SETUP_TOPIC = { key: 'setup', emoji: '⚙️', name: 'Server setup', short: 'Set me up, and choose who can use what', commands: ['setup', 'access', 'help'] };
+const SETUP_TOPIC = { key: 'setup', emoji: '⚙️', name: 'Server setup', short: 'Set me up, and choose who can use what', commands: ['setup', 'access', 'help', 'restart'] };
 const TOPICS = [...access.FEATURES, SETUP_TOPIC];
 const topicByKey = new Map(TOPICS.map((topic) => [topic.key, topic]));
 

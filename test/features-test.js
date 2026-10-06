@@ -21,6 +21,7 @@ const tempVoice = require('../features/tempvoice');
 const access = require('../features/access');
 const help = require('../features/help');
 const setup = require('../features/setup');
+const restart = require('../features/restart');
 
 const { PermissionFlagsBits, PermissionsBitField, ComponentType, MessageFlags } = discord;
 let failures = 0;
@@ -125,7 +126,7 @@ function command(name, sub, options = {}, { canManage = true, permission } = {})
 }
 const answer = (interaction) => interaction.log.findLast((l) => ['reply', 'editReply', 'followUp'].includes(l[0]))?.[1];
 const run = async (interaction) => {
-  for (const feature of [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, tempVoice, help, setup]) if (await feature.handleCommand(interaction)) return interaction;
+  for (const feature of [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, tempVoice, help, setup, restart]) if (await feature.handleCommand(interaction)) return interaction;
   throw new Error(`no feature handled /${interaction.commandName}`);
 };
 
@@ -1451,7 +1452,7 @@ function click(message, customId, member = alex) {
   console.log('\n----- /help and !help -----');
   const allCommands = [
     new discord.SlashCommandBuilder().setName('embeds').setDescription('Settings for how this bot fixes shared links').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-    ...[roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, help, setup].flatMap((f) => f.commands),
+    ...[roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, help, setup, restart].flatMap((f) => f.commands),
   ];
   help.init({ commands: allCommands });
   const helpCommand = (topic) => command('help', null, topic ? { topic } : {}, { canManage: false });
@@ -1648,6 +1649,46 @@ function click(message, customId, member = alex) {
     access.setRule('g1', 'all', { channels: [] });
     access.setIgnored('g1', []);
     return problem?.includes('Moderation** is turned off') ? null : problem;
+  });
+
+  console.log('\n----- /restart -----');
+  const exits = [];
+  restart.control.exit = (code) => exits.push(code);
+  let keptAlive = true;
+  restart.control.isKeptAlive = () => keptAlive;
+  const patched = [];
+  const botClient = {
+    application: { fetch: async () => ({ owner: { id: 'u-owner' } }) },
+    destroy: async () => { botClient.destroyed = true; },
+    rest: { patch: async (route, o) => patched.push([route, o.body.content]) },
+  };
+  const restartAs = (userId) => Object.assign(command('restart', null), { user: { id: userId, tag: `${userId}#0001` }, client: botClient, applicationId: 'app1', token: 'tok1' });
+  await check('/restart from a server admin who is not the owner -> refused, keeps running', async () => {
+    const i = await run(restartAs('u-admin'));
+    return answer(i).content === 'Only my owner can restart me.' && exits.length === 0 && !botClient.destroyed ? null : answer(i).content;
+  });
+  await check('/restart from the owner while running in a window -> explains npm run background, keeps running', async () => {
+    keptAlive = false;
+    const i = await run(restartAs('u-owner'));
+    keptAlive = true;
+    return answer(i).content.includes('npm run background') && exits.length === 0 ? null : answer(i).content;
+  });
+  await check('/restart from the owner under the keep-alive -> replies, disconnects, exits with the restart code', async () => {
+    const i = await run(restartAs('u-owner'));
+    const { RESTART_EXIT_CODE } = require('../instance');
+    return answer(i).content.includes('Restarting') && answer(i).flags & MessageFlags.Ephemeral && botClient.destroyed && exits.join() === String(RESTART_EXIT_CODE) ? null : JSON.stringify([answer(i), exits]);
+  });
+  await check('after the restart -> the /restart reply changes to "back online", once', async () => {
+    await restart.announceBack(botClient, '9.9.9');
+    await restart.announceBack(botClient, '9.9.9');
+    return patched.length === 1 && patched[0][0] === discord.Routes.webhookMessage('app1', 'tok1', '@original') && patched[0][1] === '✅ Back online - version 9.9.9.' ? null : JSON.stringify(patched);
+  });
+  await check('BOT_OWNER_IDS -> those people can restart too; access rules never block /restart', async () => {
+    process.env.BOT_OWNER_IDS = 'u-friend';
+    exits.length = 0;
+    const i = await run(restartAs('u-friend'));
+    delete process.env.BOT_OWNER_IDS;
+    return exits.length === 1 && access.ALWAYS_ALLOWED.has('restart') ? null : answer(i).content;
   });
 
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL FEATURE TESTS PASSED');

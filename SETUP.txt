@@ -9,7 +9,9 @@ You don't need to know how to code.
   - After that, you only ever need Part 5 to turn the bot on.
 
 Good to know: the bot runs on your computer. It is only online while
-your computer is on AND the bot window is open.
+your computer is on. Started with Part 5 it also needs its window open;
+started in the background (see "RUN IT IN THE BACKGROUND" below) it
+doesn't, and it starts again by itself if it ever stops.
 
 Whenever this guide says "type", type the text exactly as shown and then
 press the Enter key.
@@ -220,12 +222,44 @@ that's normal until Part 5).
 
 
 ===========================================================================
+  RUN IT IN THE BACKGROUND  (recommended - no window to keep open)
+===========================================================================
+
+  A bot running in a PowerShell window goes offline whenever that window
+  closes or crashes. In the background it has no window, and if it ever
+  stops it starts again by itself a few seconds later.
+
+  1. If the bot is running in a window, press  Ctrl + C  in it.
+
+  2. Open PowerShell in the bot's folder and type:
+
+             npm run background
+
+     Once it says the bot is running, you can close PowerShell.
+
+  3. To also start the bot whenever you log in to Windows, type:
+
+             npm run autostart
+
+     (To undo that:   npm run autostart -- off )
+
+  Restart it from your phone (or anywhere):  in Discord, type   /restart
+  - in your server, or in a DM with the bot. Only the bot's owner (whoever
+  made it in the Discord Developer Portal) can use it. The bot says when
+  it's back. /restart only works while the bot runs in the background.
+
+  The bot still needs your computer to be on (and logged in). If your
+  computer goes to sleep, the bot goes offline until it wakes up.
+
+
+===========================================================================
   TURNING IT OFF, CHECKING ON IT
 ===========================================================================
 
   To turn the bot OFF:
-      Click on its PowerShell window and press  Ctrl + C
+      In a window: click on its PowerShell window and press  Ctrl + C
       (or close the window).
+      In the background: use  npm run stop  (below).
 
   To check if the bot is running:
       Open PowerShell in the bot's folder and type:   npm run status
@@ -234,14 +268,16 @@ that's normal until Part 5).
       Type:   npm run stop
 
   To restart it:
-      Turn it off, then turn it on again (Part 5).
+      In the background: type  /restart  in Discord.
+      In a window: turn it off, then turn it on again (Part 5).
 
   Only ONE copy of the bot can run at a time. If you try to start a
   second one, it will say so and not start.
 
   Everything the bot does is written to a log file. If something seems
   wrong, open the "logs" folder and then "bot.log" and look at the
-  bottom of it.
+  bottom of it. In the background, "keep-alive.log" there says each
+  time the bot stopped and was started again.
 
 
 ===========================================================================

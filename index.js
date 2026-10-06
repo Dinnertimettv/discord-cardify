@@ -20,9 +20,11 @@ const music = require('./features/music');
 const tempVoice = require('./features/tempvoice');
 const help = require('./features/help');
 const setup = require('./features/setup');
+// /restart, for the bot's owner.
+const restart = require('./features/restart');
 // Who can use what, and where (/access, /setup).
 const access = require('./features/access');
-const FEATURES = [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, tempVoice, help, setup];
+const FEATURES = [roles, expressions, alerts, logs, moderation, automod, welcome, leveling, music, tempVoice, help, setup, restart];
 // Buttons and menus that belong to a feature follow its /access rules too.
 const COMPONENT_FEATURES = { role: 'roles', 'role-menu': 'roles', music: 'music', vc: 'tempvoice' };
 const {
@@ -2553,6 +2555,7 @@ function startLogFile() {
 
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag} - version ${BOT_VERSION}`);
+  await restart.announceBack(readyClient, BOT_VERSION);
   await leaveUnlistedServers();
   if (TEST_WEBHOOK_ID) console.log('Test webhook posts (test/live.js) are handled like normal messages.');
   // Global command, so it shows up in every server the bot is in.

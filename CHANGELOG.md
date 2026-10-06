@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.5.0 - October 6, 2026
+
+### Added
+
+**Run in the background, and restart from your phone.** A bot running in a
+PowerShell window went offline whenever that window closed or crashed.
+- `npm run background` runs the bot with no window. If it ever stops, it
+  starts again by itself a few seconds later (`logs/keep-alive.log` says
+  when and why).
+- `npm run autostart` also starts it whenever you log in to Windows
+  (`npm run autostart -- off` undoes it).
+- `/restart` restarts the bot from Discord - in a server or a DM with it,
+  so it works from a phone. Only the bot's owner (or `BOT_OWNER_IDS` in
+  `.env`) can use it, and the reply changes to "back online" once it's up.
+- `npm run stop` and `npm run status` know about the background copy too.
+
 ## 2.4.0 - October 3, 2026
 
 ### Changed
