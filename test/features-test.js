@@ -745,9 +745,15 @@ function click(message, customId, member = alex) {
   const chatMessage = (member, extra = {}) => ({ guildId: 'g1', guild, member, author: { id: member.id, bot: false }, channel: chatChannel, client: fakeClient, ...extra });
   const say = (member = chatter) => leveling.onMessage(chatMessage(member), (clock += 61_000));
   const rankText = async (id) => textOf(json(answer(await run(command('rank', null, id ? { member: { id } } : {})))));
-  await check('the level curve matches MEE6 (100, 255, 475 XP)', async () => {
-    const levels = [99, 100, 254, 255, 475].map((xp) => leveling.levelFromXp(xp).level).join();
+  await check('the level curve is MEE6\'s plus 20% (120, 306, 570 XP)', async () => {
+    const levels = [119, 120, 305, 306, 570].map((xp) => leveling.levelFromXp(xp).level).join();
     return levels === '0,1,1,2,3' ? null : levels;
+  });
+  await check('XP from the old curve keeps its level and progress on the new one', async () => {
+    // 600 XP on MEE6's curve: level 3 (475), 125 of 295 toward level 4.
+    const xp = leveling.rescaleXp(600, 1, 1.2);
+    const { level, into, needed } = leveling.levelFromXp(xp);
+    return level === 3 && Math.abs(into / needed - 125 / 295) < 0.01 && leveling.rescaleXp(0, 1, 1.2) === 0 ? null : `${xp} -> ${level} ${into}/${needed}`;
   });
   await check('leveling off (the default) -> /rank says so', async () => {
     await say();
@@ -761,7 +767,7 @@ function click(message, customId, member = alex) {
   await check('/levels on, reward at level 2 -> level-ups announced where they chat, the role given', async () => {
     await run(command('levels', 'on', { on: true }));
     await run(command('levels', 'reward', { level: 2, role: 'r-artist' }));
-    for (let n = 0; n < 20; n++) await say();
+    for (let n = 0; n < 22; n++) await say();
     const ups = chat.map((p) => p.content);
     const rookies = leveling.DEFAULT_LEVEL_UPS.rookie.map((t) => t.replaceAll('{user}', '<@u-chatter>').replaceAll('{level}', '1'));
     if (!rookies.includes(ups[0])) return ups.join(' | ');
@@ -801,13 +807,13 @@ function click(message, customId, member = alex) {
     await run(command('levels', 'channel', { channel: levelChannel }));
     const text = textOf(json(answer(await run(command('levels', 'add-message', { for: 'rookie', text: 'GG {user}, you hit {level}!' })))));
     const newbie = makeMember('u-newbie');
-    for (let n = 0; n < 7; n++) await say(newbie);
+    for (let n = 0; n < 9; n++) await say(newbie);
     return levelChannel.sent[0]?.content === 'GG <@u-newbie>, you hit 1!' && text.includes('**1.** GG {user}') ? null : `${text} | ${JSON.stringify(levelChannel.sent)}`;
   });
   await check('level 5 and up -> the regulars\' built-in messages; levels 1-4 keep the custom one', async () => {
     const regular = makeMember('u-regular');
     const before = levelChannel.sent.length;
-    for (let n = 0; n < 80; n++) await say(regular);
+    for (let n = 0; n < 100; n++) await say(regular);
     const ups = levelChannel.sent.slice(before).map((p) => p.content);
     const fill = (t, level) => t.replaceAll('{user}', '<@u-regular>').replaceAll('{level}', String(level));
     const early = ups.slice(0, 4).join() === [1, 2, 3, 4].map((l) => `GG <@u-regular>, you hit ${l}!`).join();
@@ -815,7 +821,11 @@ function click(message, customId, member = alex) {
     return early && leveling.DEFAULT_LEVEL_UPS.regular.map((t) => fill(t, 5)).includes(five) ? null : ups.join(' | ');
   });
   await check('/levels messages -> every group; remove-message -> back to built-in', async () => {
-    const all = textOf(json(answer(await run(command('levels', 'messages')))));
+    const shown = await run(command('levels', 'messages'));
+    // More than one card's worth, so it comes as a reply plus follow-ups.
+    const cards = shown.log.filter(([kind]) => kind === 'reply' || kind === 'followUp').map(([, p]) => textOf(json(p)));
+    const all = cards.join('\n');
+    if (cards.some((text) => text.length > 4000) || !leveling.DEFAULT_LEVEL_UPS.legend.every((t) => all.includes(t))) return `${cards.length} cards: ${cards.map((t) => t.length)}`;
     const removed = textOf(json(answer(await run(command('levels', 'remove-message', { for: 'rookie', number: 1 })))));
     const none = answer(await run(command('levels', 'remove-message', { for: 'rookie', number: 1 }))).content;
     const groups = ['Levels 1-4', 'Levels 5-9', 'Levels 10-19', 'Level 20 and up'].every((g) => all.includes(g));

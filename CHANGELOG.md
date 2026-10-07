@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.6.0 - October 7, 2026
+
+### Added
+
+- 40 new built-in level-up messages, 10 for each level group - on the
+  funny side ("🌱 The grass outside has filed a missing person report.").
+  Each group now has 16-18 to pick from. Servers that added their own
+  messages for a group still get only theirs.
+
+### Changed
+
+- Each level takes 20% more XP than before (MEE6's curve plus 20%), so
+  levels come a little slower. Nobody loses a level: everyone's XP is
+  moved to the new curve the first time the bot sees their server, at the
+  same level and the same share of the way to the next one. (XP totals on
+  /rank and /leaderboard go up by about 20% to match.)
+
+### Fixed
+
+- `/levels messages` no longer gets cut off when the list is longer than
+  one card holds - it continues in more private cards.
+
 ## 2.5.0 - October 6, 2026
 
 ### Added

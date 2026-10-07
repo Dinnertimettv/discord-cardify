@@ -1,5 +1,5 @@
 // Leveling: members earn XP for chatting (15-25 per message, at most once a
-// minute, so spamming doesn't pay), level up on MEE6's curve (with a random
+// minute, so spamming doesn't pay), level up on MEE6's curve plus 20% (with a random
 // message that fits the level), and can get roles at chosen levels. /rank and /leaderboard are for everyone; admins set
 // it up with /levels. Saved in data/levels.json.
 const {
@@ -42,6 +42,16 @@ const DEFAULT_LEVEL_UPS = {
     '🎮 {user} hit **level {level}**. Tutorial almost complete.',
     '📉 {user} is **level {level}** now. The bar was on the floor, and they cleared it!',
     '🍞 {user} reached **level {level}**. Still a little undercooked, but rising.',
+    '📦 {user} unlocked **level {level}**. Some assembly required.',
+    "🍼 {user} hit **level {level}**. Mom says it's their turn on the server now.",
+    '📝 {user} reached **level {level}**. Their résumé now lists "Discord experience."',
+    '🚲 {user} is now **level {level}**. Training wheels stay on for now.',
+    "🥚 {user} reached **level {level}**. Not hatched yet, but something's definitely moving in there.",
+    "📶 {user} hit **level {level}**. One bar of signal, but it's connecting.",
+    '👏 {user} reached **level {level}**. Somewhere, a single NPC slow-claps.',
+    '🛟 {user} is **level {level}** now. The deep end is still closed to them.',
+    "🎈 {user} hit **level {level}**! It's not a big deal, but we got balloons anyway.",
+    '🪴 {user} reached **level {level}**. Water them with attention and they might grow.',
   ],
   regular: [
     '📈 {user} reached **level {level}**! Okay, they actually talk now.',
@@ -50,6 +60,16 @@ const DEFAULT_LEVEL_UPS = {
     '🍕 {user} reached **level {level}**! That earns them a slice.',
     '🎯 {user} hit **level {level}**. Regular status: unlocked.',
     '☕ {user} reached **level {level}** - powered by snacks and chatting.',
+    "🪑 {user} hit **level {level}**. They have a usual seat now. Don't sit in it.",
+    '🧾 {user} reached **level {level}**. At this point they should be paying rent.',
+    "🔑 {user} is now **level {level}**. Here's a spare key. Please stop knocking.",
+    '📬 {user} hit **level {level}**. Should we start forwarding their mail here?',
+    '📱 {user} reached **level {level}**. Their screen time report is going to be brutal.',
+    '🍿 {user} is **level {level}**. Shows up to every drama with snacks ready.',
+    "🦜 {user} hit **level {level}**. Talks a lot. We've grown to like it.",
+    '👋 {user} reached **level {level}**. Nobody says "who?" when they post anymore.',
+    '🗣️ {user} is now **level {level}**. Has opinions now. So many opinions.',
+    '🛁 {user} hit **level {level}**. Comfortable enough to chat in a bathrobe now.',
   ],
   veteran: [
     "🔥 {user} reached **level {level}**. They're on fire!",
@@ -58,6 +78,16 @@ const DEFAULT_LEVEL_UPS = {
     '🚀 {user} just blasted off to **level {level}**!',
     '🧠 {user} reached **level {level}**. Big brain chatter energy.',
     '🏋️ {user} hit **level {level}**. Respect the grind.',
+    '🌱 {user} hit **level {level}**. The grass outside has filed a missing person report.',
+    '⌨️ {user} reached **level {level}**. Their keyboard has asked for a union rep.',
+    '☀️ {user} is now **level {level}**. Last confirmed contact with sunlight: unknown.',
+    '🧱 {user} hit **level {level}**. Basically load-bearing at this point. Do not remove.',
+    '📚 {user} reached **level {level}**. Knows the lore. *All* of the lore.',
+    '🔋 {user} is **level {level}**. Running on 3% battery and pure spite.',
+    "🪳 {user} hit **level {level}**. Couldn't get rid of them if we tried. (We haven't tried.)",
+    '🧓 {user} reached **level {level}**. Remembers this server "back in the day."',
+    "🧛 {user} is now **level {level}**. Only seen after dark. Hasn't aged a day.",
+    '🎓 {user} hit **level {level}**. Has a PhD in being here.',
   ],
   legend: [
     '👑 All hail {user}, now **level {level}**! A true legend of the server.',
@@ -66,6 +96,16 @@ const DEFAULT_LEVEL_UPS = {
     '🌌 {user} has ascended to **level {level}**. Mere mortals can only watch.',
     '🗿 {user} reached **level {level}**. Somebody build this person a statue.',
     "🧙 {user} is now **level {level}**. They've seen things. They know things.",
+    '⏰ {user} hit **level {level}**. Said "one more message" about {level} levels ago.',
+    '🏛️ {user} reached **level {level}**. Historians will study these messages.',
+    '🦖 {user} is now **level {level}**. Has been here since this server was a swamp.',
+    '💼 {user} hit **level {level}**. At this point they should be on the payroll.',
+    '👻 {user} reached **level {level}**. Not a member anymore. They haunt this place now.',
+    "🧬 {user} is **level {level}**. Scientists estimate they're 40% Discord by now.",
+    '💀 {user} hit **level {level}**. "Offline" is just a rumor to them.',
+    '🌍 {user} reached **level {level}**. The outside world has sent several letters. All unopened.',
+    "🪦 {user} is now **level {level}**. When they go, we're naming a channel after them.",
+    '🎤 {user} hit **level {level}**. *drops mic* *picks it back up* *keeps typing*',
   ],
 };
 
@@ -138,26 +178,44 @@ const LEVELS_COMMAND = new SlashCommandBuilder()
   )
   .addSubcommand((s) => s.setName('status').setDescription('See the leveling settings'));
 
-// XP needed to go from one level to the next (MEE6's curve).
-function xpForNextLevel(level) {
-  return 5 * level * level + 50 * level + 100;
+// How much more XP each level takes than on MEE6's curve. Saved with each
+// server's members, so changing it rescales their XP and nobody loses a level.
+const XP_SCALE = 1.2;
+
+// XP needed to go from one level to the next (MEE6's curve, times XP_SCALE).
+function xpForNextLevel(level, scale = XP_SCALE) {
+  return Math.round(scale * (5 * level * level + 50 * level + 100));
 }
 
 // Total XP -> { level, into (XP into the current level), needed (for the next) }.
-function levelFromXp(xp) {
+function levelFromXp(xp, scale = XP_SCALE) {
   let level = 0;
   let left = xp;
-  while (left >= xpForNextLevel(level)) {
-    left -= xpForNextLevel(level);
+  while (left >= xpForNextLevel(level, scale)) {
+    left -= xpForNextLevel(level, scale);
     level++;
   }
-  return { level, into: left, needed: xpForNextLevel(level) };
+  return { level, into: left, needed: xpForNextLevel(level, scale) };
+}
+
+// XP on one curve -> the same level, and the same share of the way to the next, on another.
+function rescaleXp(xp, from, to) {
+  const { level, into, needed } = levelFromXp(xp, from);
+  let total = 0;
+  for (let l = 0; l < level; l++) total += xpForNextLevel(l, to);
+  return total + Math.floor((into / needed) * xpForNextLevel(level, to));
 }
 
 function guildData(guildId) {
   const guilds = store.load().guilds;
   const data = (guilds[guildId] ??= { channelId: null, messages: {}, rewards: {}, users: {} });
   data.messages ??= {};
+  // Members' XP was earned on an older curve: move it to this one, same levels.
+  if ((data.xpScale ?? 1) !== XP_SCALE) {
+    for (const user of Object.values(data.users)) user.xp = rescaleXp(user.xp, data.xpScale ?? 1, XP_SCALE);
+    data.xpScale = XP_SCALE;
+    store.save();
+  }
   // Older settings had one custom message for every level.
   if (data.message) {
     for (const { key } of TIERS) data.messages[key] ??= [data.message];
@@ -268,9 +326,22 @@ async function showLeaderboard(interaction) {
 
 async function configure(interaction) {
   const reply = (content) => interaction.reply({ content, flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } });
-  const replyCard = (...parts) => {
-    const container = new ContainerBuilder().setAccentColor(LEVEL_COLOR).addTextDisplayComponents(new TextDisplayBuilder().setContent(parts.join('\n\n').slice(0, 3900)));
-    return interaction.reply({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral, components: [container], allowedMentions: { parse: [] } });
+  // A card holds about 4,000 characters, so a long list (every group's
+  // messages) goes out as more than one private card.
+  const replyCard = async (...parts) => {
+    const cards = [];
+    for (const part of parts.map((text) => text.slice(0, 3900))) {
+      if (cards.length && cards.at(-1).length + 2 + part.length <= 3900) cards[cards.length - 1] += `\n\n${part}`;
+      else cards.push(part);
+    }
+    const card = (text) => ({
+      flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+      components: [new ContainerBuilder().setAccentColor(LEVEL_COLOR).addTextDisplayComponents(new TextDisplayBuilder().setContent(text))],
+      allowedMentions: { parse: [] },
+    });
+    await interaction.reply(card(cards[0]));
+    for (const text of cards.slice(1)) await interaction.followUp(card(text));
+    return true;
   };
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) return reply('Only people with the **Manage Server** permission can use /levels.');
   const data = guildData(interaction.guildId);
@@ -375,5 +446,6 @@ module.exports = {
   setAnnounceChannel,
   // For tests.
   levelFromXp,
+  rescaleXp,
   DEFAULT_LEVEL_UPS,
 };
