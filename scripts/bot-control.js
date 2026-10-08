@@ -5,7 +5,7 @@
 //   npm run background         start it with no window, restarting it if it stops
 //   npm run autostart          also do that whenever you log in to Windows
 //   npm run autostart -- off   stop doing that
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -53,6 +53,43 @@ async function stop() {
   }
 }
 
+// The little script Windows runs to start the keep-alive with no window (the
+// 0), both at login (autostart) and for "npm run background".
+function launcherScript() {
+  const quote = (text) => `""${text}""`;
+  return [
+    "' Starts Spork in the background (no window). Made by Spork's scripts/bot-control.js;",
+    "' for starting with Windows, remove it with \"npm run autostart -- off\".",
+    'Set shell = CreateObject("WScript.Shell")',
+    `shell.CurrentDirectory = "${BOT_DIR}"`,
+    `shell.Run "${quote(process.execPath)} ${quote(KEEP_ALIVE)}", 0, False`,
+    '',
+  ].join('\r\n');
+}
+
+// UTF-16 with a byte-order mark, so folder names with accents survive.
+const writeLauncher = (file) => fs.writeFileSync(file, `\ufeff${launcherScript()}`, 'utf16le');
+
+// Starts the keep-alive so it outlives whatever ran this command. On Windows a
+// program started from an editor or an app that runs commands can sit in a
+// "job" that closes everything in it when that app closes (Node's detached
+// start doesn't leave it). So Windows' own desktop (Explorer) starts it
+// instead, through the same no-window script as autostart - just like at login.
+// Returns false when that isn't available.
+function startThroughDesktop() {
+  if (process.platform !== 'win32') return false;
+  const file = path.join(os.tmpdir(), 'spork-start.vbs');
+  try {
+    writeLauncher(file);
+    spawnSync('explorer.exe', [file], { windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const startDirectly = () => spawn(process.execPath, [KEEP_ALIVE], { cwd: BOT_DIR, detached: true, stdio: 'ignore', windowsHide: true }).unref();
+
 async function background() {
   const keepAlivePid = await findKeepAlive();
   if (keepAlivePid) {
@@ -64,9 +101,13 @@ async function background() {
     console.log(`The bot is running in a window (process ${botPid}). Stop it first with "npm run stop", then run this again.`);
     return;
   }
-  // Detached and hidden: it keeps going after this window closes.
-  spawn(process.execPath, [KEEP_ALIVE], { cwd: BOT_DIR, detached: true, stdio: 'ignore', windowsHide: true }).unref();
-  if (await waitFor(findRunningBot, true)) {
+  // Hidden, and on its own: it keeps going after this window closes.
+  let started = startThroughDesktop() && (await waitFor(findRunningBot, true));
+  if (!started && !(await findKeepAlive())) {
+    startDirectly();
+    started = await waitFor(findRunningBot, true);
+  }
+  if (started) {
     console.log('The bot is running in the background. You can close this window.');
     console.log('If it ever stops, it starts again by itself. Use /restart in Discord to restart it.');
   } else {
@@ -84,18 +125,7 @@ function autostart(setting) {
     console.log("The bot won't start by itself when you log in any more.");
     return;
   }
-  // A tiny script Windows runs at login; the 0 means "no window".
-  const quote = (text) => `""${text}""`;
-  const script = [
-    "' Starts Spork in the background (no window) when you log in. Made by \"npm run autostart\";",
-    "' remove it with \"npm run autostart -- off\".",
-    'Set shell = CreateObject("WScript.Shell")',
-    `shell.CurrentDirectory = "${BOT_DIR}"`,
-    `shell.Run "${quote(process.execPath)} ${quote(KEEP_ALIVE)}", 0, False`,
-    '',
-  ].join('\r\n');
-  // UTF-16 with a byte-order mark, so folder names with accents survive.
-  fs.writeFileSync(STARTUP_FILE, `\ufeff${script}`, 'utf16le');
+  writeLauncher(STARTUP_FILE);
   console.log('The bot now starts by itself, in the background, whenever you log in to Windows.');
   console.log('Run "npm run background" to start it now too.');
 }
