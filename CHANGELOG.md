@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.6.1 - October 7, 2026
+
+### Fixed
+
+- `npm run background` now has the Windows desktop start the bot's
+  keep-alive, the same way it starts at login. Started from an editor or
+  an app that runs commands, it used to stop - bot and all - whenever that
+  app closed or restarted, with nothing in the logs and nothing left to
+  answer `/restart`.
+
 ## 2.6.0 - October 7, 2026
 
 ### Added
